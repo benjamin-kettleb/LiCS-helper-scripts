@@ -36,6 +36,7 @@ ifgdates2 = []
 # Initialize lists for bad epochs and bad interferograms
 bad_epoc = []
 bad_ifg = []
+deleted_ifg = []
 
 review_mode = False  # Flag to indicate if we are reviewing bad_ifg
 review_index = 0     # Index for reviewing bad_ifg
@@ -151,7 +152,7 @@ btn_prev.on_clicked(previous_image)
 
 def show_review_image():
     """Display the current interferogram from the bad_ifg list."""
-    global review_index
+    global review_index, deleted_fig
     if review_index < len(bad_ifg):
         ifgd = bad_ifg[review_index]
         unw_tiffile = os.path.join(geocdir, ifgd, ifgd + '.geo.unw.tif')
@@ -164,6 +165,10 @@ def show_review_image():
     else:
         print("Review of bad_ifg list completed.")
         plt.close()  # Close the plot when review is done
+        print("Saving deleted IFGs to deleted_ifg.txt")
+        with open(filename, "w") as file:
+            for to_del in deleted_ifg:
+                file.write(f"{to_del}\n")
 
 def keep_ifg(event):
     """Keep the current interferogram and move to the next one."""
@@ -174,13 +179,14 @@ def keep_ifg(event):
 
 def delete_ifg(event):
     """Delete the folder containing the current interferogram."""
-    global review_index
+    global review_index, deleted_ifg
     if review_index < len(bad_ifg):
         ifgd = bad_ifg[review_index]
         ifg_folder = os.path.join(geocdir, ifgd)
         try:
             shutil.rmtree(ifg_folder)  # Delete the folder
             print(f"Deleted folder for {ifgd}")
+            deleted_ifg.append(ifgd)
         except Exception as e:
             print(f"Error deleting folder for {ifgd}: {e}")
         review_index += 1
