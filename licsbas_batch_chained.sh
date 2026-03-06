@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-# LiCSBAS Jasmin Job Submission Script
+# LiCSBAS Jasmin Job Submission Script written by COMET (Milan, Muhammet etc. - https://github.com/comet-licsar/LiCSBAS/blob/main/batch_LiCSBAS.sh). Split into many jobs by Benji
 # This script generates and submits jobs to Jasmin with dependencies
 # 
 # Job structure:
@@ -64,7 +64,6 @@ nlook="1"	# multilook factor, used in step02
 GEOCmldir="GEOCml${nlook}"	# If start from 11 or later after doing 03-05, use e.g., GEOCml${nlook}GACOSmaskclip
 n_para="" # Number of parallel processing in step 02-05,12,13,16. default: number of usable CPU
 gpu="n"	# y/n
-check_only="n" # y/n. If y, not run scripts and just show commands to be done
 
 logdir="log"
 log="$logdir/$(date +%Y%m%d%H%M)$(basename $0 .sh)_${start_step}_${end_step}.log"
@@ -324,6 +323,11 @@ JOBFOOTER
   fi
 }
 
+add_pipefall() {
+    local cmd="$1"
+    echo "${cmd}if [ \${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi"
+}
+
 # Build function for STEP 1
 ################################
 ### Apply Default Configuration ###
@@ -354,6 +358,20 @@ JASMIN_CPUS_STEP14_16="${JASMIN_CPUS_STEP14_16:-$JASMIN_CPUS_DEFAULT}"
 JASMIN_QOS="${JASMIN_QOS:-$JASMIN_QOS_DEFAULT}"
 
 ################################
+### Establish if Reuwrapping ###
+################################
+
+if [ $run_reunwrapping == "y" ]; then
+  # do some additional settings for the reunwrapping:
+  p01_get_pha="y"
+  p01_get_mli="y" # not really needed but useful for weighting in multilooking
+  order_op03_05='' #skipping the optional 03-05 steps, contained here
+  skipstep02=1
+else
+  skipstep02=0
+fi
+
+################################
 ### Build Commands for Each Step ###
 ################################
 
@@ -363,93 +381,350 @@ if [ "$LINK_GEOC_DATA" == "y" ]; then
   STEP1_CMDS+="echo 'Linking GEOC data from: $GEOC_LINK_SOURCE'"$'\n'
   STEP1_CMDS+="mkdir -p GEOC && cd GEOC && $(for file in $GEOC_LINK_SOURCE/*.tif; do echo \"ln -s $file $(basename $file) 2>/dev/null || true\"; done) && cd .."$'\n'
 else
-  STEP1_CMDS+="p01_op=''"$'\n'
-  [ ! -z "$p01_frame" ] && STEP1_CMDS+="p01_op=\"\$p01_op -f $p01_frame\""$'\n'
-  [ ! -z "$p01_start_date" ] && STEP1_CMDS+="p01_op=\"\$p01_op -s $p01_start_date\""$'\n'
-  [ ! -z "$p01_end_date" ] && STEP1_CMDS+="p01_op=\"\$p01_op -e $p01_end_date\""$'\n'
-  [ ! -z "$p01_n_para" ] && STEP1_CMDS+="p01_op=\"\$p01_op --n_para $p01_n_para\""$'\n'
-  [ "$p01_sbovl" == "y" ] && STEP1_CMDS+="p01_op=\"\$p01_op --sbovl\""$'\n'
-  [ "$p01_rngoff" == "y" ] && STEP1_CMDS+="p01_op=\"\$p01_op --rngoff\""$'\n'
-  [ "$p01_get_gacos" == "y" ] && STEP1_CMDS+="p01_op=\"\$p01_op --get_gacos\""$'\n'
-  [ "$p01_get_pha" == "y" ] && STEP1_CMDS+="p01_op=\"\$p01_op --get_pha\""$'\n'
-  [ "$p01_get_mli" == "y" ] && STEP1_CMDS+="p01_op=\"\$p01_op --get_mli\""$'\n'
-  STEP1_CMDS+="LiCSBAS01_get_geotiff.py \$p01_op 2>&1 | tee -a \$log"$'\n'
+  if [ $start_step -le 01 -a $end_step -ge 01 ];then
+    p01_op=""
+    if [ ! -z $p01_frame ];then p01_op="$p01_op -f $p01_frame"; fi
+    if [ ! -z $p01_start_date ];then p01_op="$p01_op -s $p01_start_date"; fi
+    if [ ! -z $p01_end_date ];then p01_op="$p01_op -e $p01_end_date"; fi
+    if [ ! -z $p01_n_para ];then p01_op="$p01_op --n_para $p01_n_para"; fi
+    # Add --sbovl option if p01_sbovl is "y"
+    if [ "$p01_sbovl" == "y" ]; then p01_op="$p01_op --sbovl"; fi
+    if [ "$p01_rngoff" == "y" ]; then p01_op="$p01_op --rngoff"; fi
+    if [ "$p01_get_gacos" == "y" ]; then p01_op="$p01_op --get_gacos"; fi
+    if [ "$p01_get_pha" == "y" ]; then p01_op="$p01_op --get_pha"; fi
+    if [ "$p01_get_mli" == "y" ]; then p01_op="$p01_op --get_mli"; fi
+
+    STEP1_CMDS+="LiCSBAS01_get_geotiff.py $p01_op 2>&1 | tee -a \$log"$'\n'
+    STEP1_CMDS=$(add_pipefall "$STEP1_CMDS")
+  fi
 fi
 
 # STEPS 2-11: ML Prep and unwrap
 STEP2_11_CMDS="echo 'Running Steps 2-11...'"$'\n'
-if [ "$run_reunwrapping" == "y" ]; then
-  STEP2_11_CMDS+="p02to05_op=''"$'\n'
-  [ ! -z "$p02to05_op_GEOCdir" ] && STEP2_11_CMDS+="p02to05_op=\"-i $p02to05_op_GEOCdir\"" || STEP2_11_CMDS+="p02to05_op='-i GEOC'"$'\n'
-  [ ! -z "$nlook" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op -M $nlook\""$'\n'
-  [ ! -z "$p02to05_freq" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op --freq $p02to05_freq\""$'\n'
-  [ ! -z "$p02to05_n_para" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op --n_para $p02to05_n_para\""$'\n'
-  [ ! -z "$p02to05_thres" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op --thres $p02to05_thres\""$'\n'
-  [ ! -z "$p02to05_filter" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op --filter $p02to05_filter\""$'\n'
-  [ ! -z "$p02to05_cliparea_geo" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op -g $p02to05_cliparea_geo\""$'\n'
-  [ "$p02to05_cascade" == "y" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op --cascade\""$'\n'
-  [ "$p02to05_hgtcorr" == "y" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op --hgtcorr\""$'\n'
-  [ "$p02to05_gacos" == "y" ] && STEP2_11_CMDS+="p02to05_op=\"\$p02to05_op --gacos\""$'\n'
-  STEP2_11_CMDS+="LiCSBAS02to05_unwrap.py \$p02to05_op 2>&1 | tee -a \$log"$'\n'
+if [ "$skipstep02" -eq 1 ]; then
+  p02to05_op=""
+
+  # Setting the GEOC directory
+  if [ ! -z "$p02to05_op_GEOCdir" ]; then
+    p02to05_op="$p02to05_op -i $p02to05_op_GEOCdir"
+  else
+    p02to05_op="$p02to05_op -i GEOC"
+  fi
+
+  # Additional parameters
+  if [ ! -z "$nlook" ]; then p02to05_op="$p02to05_op -M $nlook"; fi
+  if [ ! -z "$p02to05_freq" ]; then p02to05_op="$p02to05_op --freq $p02to05_freq"; fi
+  if [ ! -z "$p02to05_n_para" ]; then p02to05_op="$p02to05_op --n_para $p02to05_n_para"; fi
+  if [ ! -z "$p02to05_thres" ]; then p02to05_op="$p02to05_op --thres $p02to05_thres"; fi
+  if [ ! -z "$p02to05_filter" ]; then p02to05_op="$p02to05_op --filter $p02to05_filter"; fi
+  if [ ! -z "$p02to05_cliparea_geo" ]; then p02to05_op="$p02to05_op -g $p02to05_cliparea_geo"; fi
+  if [ "$p02to05_cascade" == "y" ]; then p02to05_op="$p02to05_op --cascade"; fi
+  if [ "$p02to05_hgtcorr" == "y" ]; then p02to05_op="$p02to05_op --hgtcorr"; fi
+  if [ "$p02to05_gacos" == "y" ]; then p02to05_op="$p02to05_op --gacos"; fi
+
+  STEP2_11_CMDS+="LiCSBAS02to05_unwrap.py $p02to05_op 2>&1 | tee -a \$log"$'\n'
+  STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+  fi
+
 else
-  STEP2_11_CMDS+="p02_op=''"$'\n'
-  [ ! -z "$p02_GEOCdir" ] && STEP2_11_CMDS+="p02_op=\"-i $p02_GEOCdir\"" || STEP2_11_CMDS+="p02_op='-i GEOC'"$'\n'
-  [ ! -z "$p02_GEOCmldir" ] && STEP2_11_CMDS+="p02_op=\"\$p02_op -o $p02_GEOCmldir\""$'\n'
-  [ ! -z "$nlook" ] && STEP2_11_CMDS+="p02_op=\"\$p02_op -n $nlook\""$'\n'
-  [ ! -z "$p02_freq" ] && STEP2_11_CMDS+="p02_op=\"\$p02_op --freq $p02_freq\""$'\n'
-  [ "$p02_sbovl" == "y" ] && STEP2_11_CMDS+="p02_op=\"\$p02_op --sbovl\""$'\n'
-  [ "$p02_rngoff" == "y" ] && STEP2_11_CMDS+="p02_op=\"\$p02_op --rngoff\""$'\n'
-  STEP2_11_CMDS+="LiCSBAS02_ml_prep.py \$p02_op 2>&1 | tee -a \$log"$'\n'
+  # Run step 02 if not skipped
+  if [ "$start_step" -le 02 -a "$end_step" -ge 02 -a "$skipstep02" -eq 0 ]; then
+    p02_op=""
+
+    # Set the GEOC directories
+    if [ ! -z "$p02_GEOCdir" ]; then
+      p02_op="$p02_op -i $p02_GEOCdir"
+    else
+      p02_op="$p02_op -i GEOC"
+    fi
+    if [ ! -z "$p02_GEOCmldir" ]; then p02_op="$p02_op -o $p02_GEOCmldir"; fi
+    if [ ! -z "$nlook" ]; then p02_op="$p02_op -n $nlook"; fi
+    if [ ! -z "$p02_freq" ]; then p02_op="$p02_op --freq $p02_freq"; fi
+
+    # Parallel processing
+    if [ ! -z "$p02_n_para" ]; then
+      p02_op="$p02_op --n_para $p02_n_para"
+    elif [ ! -z "$n_para" ]; then
+      p02_op="$p02_op --n_para $n_para"
+    fi
+
+    if [ "$p02_sbovl" == "y" ]; then p02_op="$p02_op --sbovl"; fi
+    if [ "$p02_rngoff" == "y" ]; then p02_op="$p02_op --rngoff"; fi
+    STEP2_11_CMDS+="LiCSBAS02_ml_prep.py $p02_op 2>&1 | tee -a \$log"$'\n'
+    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+  fi
 fi
-if [ $start_step -le 11 -a $end_step -ge 11 ]; then
-  STEP2_11_CMDS+="echo 'Step 11: Check unwrap' && p11_op=''"$'\n'
-  [ ! -z "$p11_GEOCmldir" ] && STEP2_11_CMDS+="p11_op=\" -d $p11_GEOCmldir\"" || STEP2_11_CMDS+="p11_op=\" -d \$GEOCmldir\""$'\n'
-  [ ! -z "$p11_TSdir" ] && STEP2_11_CMDS+="p11_op=\"\$p11_op -t $p11_TSdir\""$'\n'
-  [ ! -z "$p11_unw_thre" ] && STEP2_11_CMDS+="p11_op=\"\$p11_op -u $p11_unw_thre\""$'\n'
-  [ ! -z "$p11_coh_thre" ] && STEP2_11_CMDS+="p11_op=\"\$p11_op -c $p11_coh_thre\""$'\n'
-  [ "$p11_sbovl" == "y" ] && STEP2_11_CMDS+="p11_op=\"\$p11_op --sbovl\""$'\n'
-  STEP2_11_CMDS+="LiCSBAS11_check_unw.py \$p11_op 2>&1 | tee -a \$log"$'\n'
+
+## Optional steps
+for step in $order_op03_05; do ##1
+
+if [ $step -eq 03 -a $start_step -le 03 -a $end_step -ge 03 ];then
+  if [ $do03op_GACOS == "y" ]; then
+    p03_op=""
+    if [ ! -z $p03_inGEOCmldir ];then inGEOCmldir="$p03_inGEOCmldir";
+      else inGEOCmldir="$GEOCmldir"; fi
+    p03_op="$p03_op -i $inGEOCmldir"
+    if [ ! -z $p03_outGEOCmldir_suffix ];then outGEOCmldir="$inGEOCmldir$p03_outGEOCmldir_suffix";
+      else outGEOCmldir="${inGEOCmldir}GACOS"; fi
+    p03_op="$p03_op -o $outGEOCmldir"
+    if [ ! -z $p03_gacosdir ];then p03_op="$p03_op -g $p03_gacosdir"; fi
+    if [ $p03_fillhole == "y" ];then p03_op="$p03_op --fillhole"; fi
+    if [ ! -z $p03_n_para ];then p03_op="$p03_op --n_para $p03_n_para";
+    elif [ ! -z $n_para ];then p03_op="$p03_op --n_para $n_para";fi
+    STEP2_11_CMDS+="LiCSBAS03op_GACOS.py $p03_op 2>&1 | tee -a \$log"$'\n'
+    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    ### Update GEOCmldir to be used for following steps
+    GEOCmldir="$outGEOCmldir"
+  fi
+fi
+
+if [ $step -eq 04 -a $start_step -le 04 -a $end_step -ge 04 ];then
+  if [ $do04op_mask == "y" ]; then
+    p04_op=""
+    if [ ! -z $p04_inGEOCmldir ];then inGEOCmldir="$p04_inGEOCmldir";
+      else inGEOCmldir="$GEOCmldir"; fi
+    p04_op="$p04_op -i $inGEOCmldir"
+    if [ ! -z $p04_outGEOCmldir_suffix ];then outGEOCmldir="$inGEOCmldir$p04_outGEOCmldir_suffix";
+      else outGEOCmldir="${inGEOCmldir}mask"; fi
+    p04_op="$p04_op -o $outGEOCmldir"
+    if [ ! -z $p04_mask_coh_thre_avg ];then p04_op="$p04_op -c $p04_mask_coh_thre_avg"; fi
+    if [ ! -z $p04_mask_coh_thre_ifg ];then p04_op="$p04_op -s $p04_mask_coh_thre_ifg"; fi
+    if [ ! -z $p04_mask_range ];then p04_op="$p04_op -r $p04_mask_range"; fi
+    if [ ! -z $p04_mask_range_file ];then p04_op="$p04_op -f $p04_mask_range_file"; fi
+    if [ ! -z $p04_n_para ];then p04_op="$p04_op --n_para $p04_n_para";
+    elif [ ! -z $n_para ];then p04_op="$p04_op --n_para $n_para";fi
+
+    STEP2_11_CMDS+="LiCSBAS04op_mask_unw.py $p04_op 2>&1 | tee -a \$log"$'\n'
+    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    ### Update GEOCmldir to be used for following steps
+    GEOCmldir="$outGEOCmldir"
+  fi
+fi
+
+if [ $step -eq 05 -a $start_step -le 05 -a $end_step -ge 05 ];then
+  if [ $do05op_clip == "y" ]; then
+    p05_op=""
+    if [ ! -z $p05_inGEOCmldir ];then inGEOCmldir="$p05_inGEOCmldir";
+      else inGEOCmldir="$GEOCmldir"; fi
+    p05_op="$p05_op -i $inGEOCmldir"
+    if [ ! -z $p05_outGEOCmldir_suffix ];then outGEOCmldir="$inGEOCmldir$p05_outGEOCmldir_suffix";
+      else outGEOCmldir="${GEOCmldir}clip"; fi
+    p05_op="$p05_op -o $outGEOCmldir"
+    if [ ! -z $p05_clip_range ];then p05_op="$p05_op -r $p05_clip_range"; fi
+    if [ ! -z $p05_clip_range_geo ];then p05_op="$p05_op -g $p05_clip_range_geo"; fi
+    if [ ! -z $p05_n_para ];then p05_op="$p05_op --n_para $p05_n_para";
+    elif [ ! -z $n_para ];then p05_op="$p05_op --n_para $n_para";fi
+    STEP2_11_CMDS+="LiCSBAS05op_clip_unw.py $p05_op 2>&1 | tee -a \$log"$'\n'
+    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    ### Update GEOCmldir to be used for following steps
+    GEOCmldir="$outGEOCmldir"
+  fi
+fi
+
+done ##1
+
+### Determine name of TSdir
+TSdir="TS_$GEOCmldir"
+
+if [ $start_step -le 11 -a $end_step -ge 11 ];then
+  p11_op=""
+  if [ ! -z $p11_GEOCmldir ];then p11_op="$p11_op -d $p11_GEOCmldir"; 
+    else p11_op="$p11_op -d $GEOCmldir"; fi
+  if [ ! -z $p11_TSdir ];then p11_op="$p11_op -t $p11_TSdir"; fi
+  if [ ! -z $p11_unw_thre ];then p11_op="$p11_op -u $p11_unw_thre"; fi
+  if [ ! -z $p11_coh_thre ];then p11_op="$p11_op -c $p11_coh_thre"; fi
+  if [ ! -z $p11_minbtemp ];then p11_op="$p11_op --minbtemp $p11_minbtemp"; fi
+  if [ ! -z $p11_maxbtemp ];then p11_op="$p11_op --minbtemp $p11_maxbtemp"; fi
+  if [ $p11_sbovl == "y" ];then p11_op="$p11_op --sbovl"; fi
+  if [ $p11_s_param == "y" ];then p11_op="$p11_op -s"; fi
+  if [ $check_only == "y" ];then
+  STEP2_11_CMDS+="LiCSBAS11_check_unw.py $p11_op 2>&1 | tee -a \$log"$'\n'
+  STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
 fi
 
 # STEP 12: Loop closure
-STEP12_CMDS="echo 'Running Step 12: Loop closure...' && p12_op=''"$'\n'
-[ ! -z "$p12_GEOCmldir" ] && STEP12_CMDS+="p12_op=\" -d $p12_GEOCmldir\"" || STEP12_CMDS+="p12_op=\" -d \$GEOCmldir\""$'\n'
-[ ! -z "$p12_TSdir" ] && STEP12_CMDS+="p12_op=\"\$p12_op -t $p12_TSdir\"" || STEP12_CMDS+="p12_op=\"\$p12_op -t TS_\$GEOCmldir\""$'\n'
-[ ! -z "$p12_loop_thre" ] && STEP12_CMDS+="p12_op=\"\$p12_op -l $p12_loop_thre\""$'\n'
-[ "$p12_multi_prime" == "y" ] && STEP12_CMDS+="p12_op=\"\$p12_op --multi_prime\""$'\n'
-[ "$p12_nullify" == "y" ] && STEP12_CMDS+="p12_op=\"\$p12_op --nullify\""$'\n'
-[ ! -z "$p12_n_para" ] && STEP12_CMDS+="p12_op=\"\$p12_op --n_para $p12_n_para\""$'\n'
-STEP12_CMDS+="LiCSBAS12_loop_closure.py \$p12_op 2>&1 | tee -a \$log"$'\n'
+STEP12_CMDS="echo 'Running Step 12: Loop closure...''"$'\n'
+if [ $start_step -le 12 -a $end_step -ge 12 ];then
+  if [ "$cometdev" -eq 1 ] || [ "$p120_sbovl" == "y" ]; then
+    p120_use='y'
+  fi
+  if [ $p120_use == "y" ]; then
+    dirset="-c $GEOCmldir -d $GEOCmldir -t $TSdir "
+    extra=""
+    if [ $p120_ignoreconncomp == "y" ]; then
+        extra="--ignore_comp"
+    fi
+    if [ $p120_sbovl == "y" ]; then
+      extra="--sbovl"
+    fi
+    STEP12_CMDS+="LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a \$log"$'\n'
+    STEP12_CMDS+="if [ ${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #exit 1; fi # this often fails, so only warning message"$'\n'
+
+  fi
+
+  if [ $p120_sbovl != "y" ]; then
+      p12_op=""
+      if [ $cometdev -eq 1 ]; then
+         p12_nullify="y"
+      fi
+      if [ ! -z $p12_GEOCmldir ];then p12_op="$p12_op -d $p12_GEOCmldir"; 
+        else p12_op="$p12_op -d $GEOCmldir"; fi
+      if [ ! -z $p12_TSdir ];then p12_op="$p12_op -t $p12_TSdir"; fi
+      if [ ! -z $p12_loop_thre ];then p12_op="$p12_op -l $p12_loop_thre"; fi
+      if [ $p12_multi_prime == "y" ];then p12_op="$p12_op --multi_prime"; fi
+      if [ $p12_nullify == "y" ];then p12_op="$p12_op --nullify"; fi
+      if [ $p12_nullify_fix_ref == "y" ]; then p12_op="$p12_op --nullify_fix_ref"; fi
+      if [ $p12_skippngs == "y" ];then p12_op="$p12_op --nopngs"; fi
+      if [ ! -z $p12_rm_ifg_list ];then p12_op="$p12_op --rm_ifg_list $p12_rm_ifg_list"; fi
+      if [ ! -z $p12_n_para ];then p12_op="$p12_op --n_para $p12_n_para";
+      elif [ ! -z $n_para ];then p12_op="$p12_op --n_para $n_para";fi
+      STEP12_CMDS+="LiCSBAS12_loop_closure.py $p12_op 2>&1 | tee -a \$log"$'\n'
+      # 2024/11/13: updated nullification may cause extra all-nans-in-ref area. Rerunning step 120 if set to be used
+      if [ $p12_nullify == "y" ];then
+      if [ $p120_use == "y" ]; then
+        dirset="-c $GEOCmldir -d $GEOCmldir -t $TSdir "
+        extra=""
+        if [ $p120_ignoreconncomp == "y" ]; then
+            extra="--ignore_comp"
+        fi
+        STEP12_CMDS+="LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a \$log"$'\n'
+        STEP12_CMDS+="if [ ${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #"$'\n'
+
+      fi
+      fi
+    fi
+fi
 
 # STEP 13: Small baseline inversion
-STEP13_CMDS="echo 'Running Step 13: Small baseline inversion...' && p13_op=''"$'\n'
-[ ! -z "$p13_GEOCmldir" ] && STEP13_CMDS+="p13_op=\" -d $p13_GEOCmldir\"" || STEP13_CMDS+="p13_op=\" -d \$GEOCmldir\""$'\n'
-[ ! -z "$p13_TSdir" ] && STEP13_CMDS+="p13_op=\"\$p13_op -t $p13_TSdir\"" || STEP13_CMDS+="p13_op=\"\$p13_op -t TS_\$GEOCmldir\""$'\n'
-[ ! -z "$p13_inv_alg" ] && STEP13_CMDS+="p13_op=\"\$p13_op --inv_alg $p13_inv_alg\""$'\n'
-[ ! -z "$p13_mem_size" ] && STEP13_CMDS+="p13_op=\"\$p13_op --mem_size $p13_mem_size\""$'\n'
-[ ! -z "$p13_gamma" ] && STEP13_CMDS+="p13_op=\"\$p13_op --gamma $p13_gamma\""$'\n'
-[ ! -z "$p13_n_para" ] && STEP13_CMDS+="p13_op=\"\$p13_op --n_para $p13_n_para\""$'\n'
-[ "$p13_singular_gauss" == "y" ] && STEP13_CMDS+="p13_op=\"\$p13_op --singular_gauss\""$'\n'
-[ "$gpu" == "y" ] && STEP13_CMDS+="p13_op=\"\$p13_op --gpu\""$'\n'
-STEP13_CMDS+="LiCSBAS13_sb_inv.py \$p13_op 2>&1 | tee -a \$log"$'\n'
+STEP13_CMDS="echo 'Running Step 13: Small baseline inversion...''"$'\n'
+if [ $start_step -le 13 -a $end_step -ge 13 ];then
+  # getting eq offsets here:
+  if [ "$eqoffs" == "y" -a $eqoffs_minmag -gt 0 ]; then
+    extra='-M '$eqoffs_minmag
+    extra=$extra' -t '$TSdir
+    extra=$extra' -o '$eqoffs_txtfile
+    extra=$extra' --buffer '$eqoffs_buffer
+    STEP13_CMDS+="LiCSBAS_get_eqoffsets.py $extra 2>&1 | tee -a \$log"$'\n'
+  fi
+  p13_op=""
+  if [ ! -z "$p13_GEOCmldir" ];then p13_op="$p13_op -d $p13_GEOCmldir";
+    else p13_op="$p13_op -d $GEOCmldir"; fi
+  if [ ! -z "$p13_TSdir" ];then p13_op="$p13_op -t $p13_TSdir"; fi
+  if [ ! -z "$p13_inv_alg" ];then p13_op="$p13_op --inv_alg $p13_inv_alg"; fi
+  if [ ! -z "$p13_mem_size" ];then p13_op="$p13_op --mem_size $p13_mem_size"; fi
+  if [ ! -z "$p13_gamma" ];then p13_op="$p13_op --gamma $p13_gamma"; fi
+  if [ ! -z "$p13_inputunit" ];then p13_op="$p13_op --input_units $p13_inputunit"; fi
+  if [ ! -z "$p13_n_para" ];then p13_op="$p13_op --n_para $p13_n_para";
+    elif [ ! -z "$n_para" ];then p13_op="$p13_op --n_para $n_para"; fi
+  if [ ! -z "$p13_n_unw_r_thre" ];then p13_op="$p13_op --n_unw_r_thre $p13_n_unw_r_thre"; fi
+  if [ "$p13_keep_incfile" == "y" ];then p13_op="$p13_op --keep_incfile"; fi
+  if [ "$p13_ignore_nullification" == "y" ]; then p13_op="$p13_op --ignore_nullification"; fi
+  if [ "$p13_nullify_noloops" == "y" ];then p13_op="$p13_op --nullify_noloops"; fi
+  if [ "$p13_singular" == "y" ];then p13_op="$p13_op --singular"; fi
+  if [ "$p13_sbovl" == "y" ];then p13_op="$p13_op --sbovl"; fi
+  if [ "$p13_singular_gauss" == "y" ];then p13_op="$p13_op --singular_gauss"; fi
+  if [ "$p13_skippngs" == "y" ];then p13_op="$p13_op --nopngs"; fi
+  if [ "$gpu" == "y" ];then p13_op="$p13_op --gpu"; fi
+
+  if [ "$cometdev" -eq 1 ];then
+      extra='--nopngs'
+      if [ -z "$p13_n_unw_r_thre" ];then extra="$extra --n_unw_r_thre 0.4"; fi
+      extra="$extra --singular_gauss"
+    else
+      extra=''
+  fi
+
+  if [ "$eqoffs" == "y" ]; then
+    touch $eqoffs_txtfile # just in case it would fail earlier
+    extra='--offsets '$eqoffs_txtfile
+  fi
+
+    STEP13_CMDS+="LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a \$log"$'\n'
+    STEP13_CMDS+="pstat=(${PIPESTATUS[0]})"$'\n'
+
+    if [ "$p12_nullify" == "y" ];then
+      STEP13_CMDS+="if [ $pstat -ne 0 ];then"$'\n'
+      STEP13_CMDS+="  echo 'Fixing the unresolved-yet issue with NaNs in ref area by just rerunning step 13'"$'\n'
+      STEP13_CMDS+="  LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a \$log"$'\n'
+      STEP13_CMDS+="pstat=(${PIPESTATUS[0]})"$'\n'
+      STEP13_CMDS+="fi"$'\n'
+    fi
+
+    STEP13_CMDS+="if [ $pstat -ne 0 ];then exit 1; fi"$'\n'
+  fi
+fi
 
 # STEPS 14-16: Velocity, masking, filtering
-STEP14_16_CMDS="echo 'Running Steps 14-16...' && p14_op=''"$'\n'
-[ ! -z "$p14_TSdir" ] && STEP14_16_CMDS+="p14_op=\" -t $p14_TSdir\"" || STEP14_16_CMDS+="p14_op=\" -t TS_\$GEOCmldir\""$'\n'
-[ ! -z "$p14_mem_size" ] && STEP14_16_CMDS+="p14_op=\"\$p14_op --mem_size $p14_mem_size\""$'\n'
-[ "$gpu" == "y" ] && STEP14_16_CMDS+="p14_op=\"\$p14_op --gpu\""$'\n'
-STEP14_16_CMDS+="LiCSBAS14_vel_std.py \$p14_op 2>&1 | tee -a \$log && echo 'Step 15: Mask TS' && p15_op=''"$'\n'
-[ ! -z "$p15_TSdir" ] && STEP14_16_CMDS+="p15_op=\" -t $p15_TSdir\"" || STEP14_16_CMDS+="p15_op=\" -t TS_\$GEOCmldir\""$'\n'
-[ ! -z "$p15_coh_thre" ] && STEP14_16_CMDS+="p15_op=\"\$p15_op -c $p15_coh_thre\""$'\n'
-[ ! -z "$p15_vstd_thre" ] && STEP14_16_CMDS+="p15_op=\"\$p15_op -v $p15_vstd_thre\""$'\n'
-[ ! -z "$p15_n_gap_thre" ] && STEP14_16_CMDS+="p15_op=\"\$p15_op -g $p15_n_gap_thre\""$'\n'
-STEP14_16_CMDS+="LiCSBAS15_mask_ts.py \$p15_op 2>&1 | tee -a \$log && echo 'Step 16: Filter TS' && p16_op=''"$'\n'
-[ ! -z "$p16_TSdir" ] && STEP14_16_CMDS+="p16_op=\" -t $p16_TSdir\"" || STEP14_16_CMDS+="p16_op=\" -t TS_\$GEOCmldir\""$'\n'
-[ ! -z "$p16_filtwidth_km" ] && STEP14_16_CMDS+="p16_op=\"\$p16_op -k $p16_filtwidth_km\""$'\n'
-[ ! -z "$p16_deg_deramp" ] && STEP14_16_CMDS+="p16_op=\"\$p16_op -d $p16_deg_deramp\""$'\n'
-[ "$p16_demerr" == "y" ] && STEP14_16_CMDS+="p16_op=\"\$p16_op --demerr\""$'\n'
-STEP14_16_CMDS+="LiCSBAS16_filt_ts.py \$p16_op 2>&1 | tee -a \$log"$'\n'
+STEP14_16_CMDS="echo 'Running Steps 14-16...''"$'\n'
+if [ $start_step -le 14 -a $end_step -ge 14 ];then
+  p14_op=""
+  if [ ! -z $p14_TSdir ];then p14_op="$p14_op -t $p14_TSdir";
+    else p14_op="$p14_op -t $TSdir"; fi
+  if [ ! -z $p14_mem_size ];then p14_op="$p14_op --mem_size $p14_mem_size"; fi
+  if [ $gpu == "y" ];then p14_op="$p14_op --gpu"; fi
+  if [ "$eqoffs" == "y" ]; then
+    # we then do not want to regenerate vstd
+    extra='--skipexisting'
+  else
+    extra=''
+  fi
+  STEP14_16+="LiCSBAS14_vel_std.py $extra $p14_op 2>&1 | tee -a \$log"$'\n'
+  STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+fi
+if [ $start_step -le 15 -a $end_step -ge 15 ];then
+  p15_op=""
+  if [ ! -z "$p15_TSdir" ];then p15_op="$p15_op -t $p15_TSdir";
+    else p15_op="$p15_op -t $TSdir"; fi
+  if [ ! -z "$p15_coh_thre" ];then p15_op="$p15_op -c $p15_coh_thre"; fi
+  if [ ! -z "$p15_n_unw_r_thre" ];then p15_op="$p15_op -u $p15_n_unw_r_thre"; fi
+  if [ ! -z "$p15_vstd_thre" ];then p15_op="$p15_op -v $p15_vstd_thre"; fi
+  if [ ! -z "$p15_maxTlen_thre" ];then p15_op="$p15_op -T $p15_maxTlen_thre"; fi
+  if [ ! -z "$p15_n_gap_thre" ];then p15_op="$p15_op -g $p15_n_gap_thre"; fi
+  if [ ! -z "$p15_stc_thre" ];then p15_op="$p15_op -s $p15_stc_thre"; fi
+  if [ ! -z "$p15_n_ifg_noloop_thre" ];then p15_op="$p15_op -i $p15_n_ifg_noloop_thre"; fi
+  if [ ! -z "$p15_n_loop_err_thre" ];then p15_op="$p15_op -l $p15_n_loop_err_thre"; fi
+  if [ ! -z "$p15_n_loop_err_ratio_thre" ];then p15_op="$p15_op -L $p15_n_loop_err_ratio_thre"; fi
+  if [ ! -z "$p15_avg_phasebias" ] && [ "$p15_sbovl" != "y" ];then p15_op="$p15_op --avg_phase_bias $p15_avg_phasebias"; fi
+  if [ ! -z "$p15_resid_rms_thre" ];then p15_op="$p15_op -r $p15_resid_rms_thre"; fi
+  if [ ! -z "$p15_vmin" ];then p15_op="$p15_op --vmin $p15_vmin"; fi
+  if [ ! -z "$p15_vmax" ];then p15_op="$p15_op --vmax $p15_vmax"; fi
+  if [ "$p15_keep_isolated" == "y" ];then p15_op="$p15_op --keep_isolated"; fi
+  if [ "$p15_noautoadjust" == "y" ];then p15_op="$p15_op --noautoadjust"; fi
+  if [ "$p15_sbovl" == "y" ];then p15_op="$p15_op --sbovl"; fi
+  if [ "$p15_n_gap_use_merged" == "y" ];then p15_op="$p15_op --n_gap_use_merged"; fi
+  STEP14_16+="LiCSBAS15_mask_ts.py $p15_op 2>&1 | tee -a \$log"$'\n'
+  STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+fi
+if [ $start_step -le 16 -a $end_step -ge 16 ];then
+  p16_op=""
+  if [ ! -z "$p16_TSdir" ];then p16_op="$p16_op -t $p16_TSdir";
+    else p16_op="$p16_op -t $TSdir"; fi
+  if [ ! -z "$p16_filtwidth_km" ];then p16_op="$p16_op -s $p16_filtwidth_km"; fi
+  if [ ! -z "$p16_filtwidth_yr" ];then p16_op="$p16_op -y $p16_filtwidth_yr"; fi
+  if [ ! -z "$p16_deg_deramp" ];then p16_op="$p16_op -r $p16_deg_deramp"; fi
+  if [ "$p16_demerr" == "y" ];then p16_op="$p16_op --demerr"; fi
+  if [ "$p16_hgt_linear" == "y" ];then p16_op="$p16_op --hgt_linear"; fi
+  if [ ! -z "$p16_hgt_min" ];then p16_op="$p16_op --hgt_min $p16_hgt_min"; fi
+  if [ ! -z "$p16_hgt_max" ];then p16_op="$p16_op --hgt_max $p16_hgt_max"; fi
+  if [ "$p16_nomask" == "y" ];then p16_op="$p16_op --nomask"; fi
+  if [ ! -z "$p16_n_para" ];then p16_op="$p16_op --n_para $p16_n_para";
+    elif [ ! -z "$n_para" ];then p16_op="$p16_op --n_para $n_para";fi
+  if [ ! -z "$p16_range" ];then p16_op="$p16_op --range $p16_range"; fi
+  if [ ! -z "$p16_range_geo" ];then p16_op="$p16_op --range_geo $p16_range_geo"; fi
+  if [ ! -z "$p16_ex_range" ];then p16_op="$p16_op --ex_range $p16_ex_range"; fi
+  if [ ! -z "$p16_ex_range_geo" ];then p16_op="$p16_op --ex_range_geo $p16_ex_range_geo"; fi
+  if [ "$p16_interpolate_nans" == "y" ] && [ "$p16_sbovl" != "y" ];then p16_op="$p16_op --interpolate_nans"; fi
+  if [ "$p16_sbovl" == "y" ];then p16_op="$p16_op --sbovl"; fi
+  if [ "$p16_skippngs" == "y" ];then p16_op="$p16_op --nopngs"; fi
 
+  if [ "$eqoffs" == "y" ]; then
+    extra='--from_model '$TSdir/model.h5
+  else
+    extra=''
+  fi
+  STEP14_16+="LiCSBAS16_filt_ts.py $extra $p16_op 2>&1 | tee -a \$log"$'\n'
+  STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+fi
 ################################
 ### Create and Submit Jobs ###
 ################################
