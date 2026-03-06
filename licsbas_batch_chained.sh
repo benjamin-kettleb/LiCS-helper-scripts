@@ -136,9 +136,9 @@ p15_n_gap_use_merged="y" # default: 'y'
 p15_sbovl="n"
 p16_filtwidth_km=""	# default: 2 km
 p16_filtwidth_yr=""	# default: avg_interval*3 yr
-p16_deg_deramp=""	# 1, bl, or 2. default: no deramp
+p16_deg_deramp="1"	# 1, bl, or 2. default: no deramp
 p16_demerr="n"	# y/n. default: n
-p16_hgt_linear="n"	# y/n. default: n
+p16_hgt_linear="y"	# y/n. default: n
 p16_hgt_min=""	# default: 200 (m)
 p16_hgt_max=""  # default: 10000 (m)
 p16_range=""	# e.g. 10:100/20:200 (ix start from 0)
@@ -328,6 +328,8 @@ add_pipefall() {
     echo "${cmd}if [ \${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi"
 }
 
+pipefall="if [ \${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi"$'\n'
+
 # Build function for STEP 1
 ################################
 ### Apply Default Configuration ###
@@ -395,7 +397,8 @@ else
     if [ "$p01_get_mli" == "y" ]; then p01_op="$p01_op --get_mli"; fi
 
     STEP1_CMDS+="LiCSBAS01_get_geotiff.py $p01_op 2>&1 | tee -a \$log"$'\n'
-    STEP1_CMDS=$(add_pipefall "$STEP1_CMDS")
+    #STEP1_CMDS=$(add_pipefall "$STEP1_CMDS")
+    STEP1_CMDS+="$pipefall"
   fi
 fi
 
@@ -423,8 +426,8 @@ if [ "$skipstep02" -eq 1 ]; then
   if [ "$p02to05_gacos" == "y" ]; then p02to05_op="$p02to05_op --gacos"; fi
 
   STEP2_11_CMDS+="LiCSBAS02to05_unwrap.py $p02to05_op 2>&1 | tee -a \$log"$'\n'
-  STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
-  fi
+  #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+  STEPS2_11_CMDS+="$pipefall"
 
 else
   # Run step 02 if not skipped
@@ -451,7 +454,8 @@ else
     if [ "$p02_sbovl" == "y" ]; then p02_op="$p02_op --sbovl"; fi
     if [ "$p02_rngoff" == "y" ]; then p02_op="$p02_op --rngoff"; fi
     STEP2_11_CMDS+="LiCSBAS02_ml_prep.py $p02_op 2>&1 | tee -a \$log"$'\n'
-    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    STEP2_11_CMDS+="$pipefall"
   fi
 fi
 
@@ -472,7 +476,8 @@ if [ $step -eq 03 -a $start_step -le 03 -a $end_step -ge 03 ];then
     if [ ! -z $p03_n_para ];then p03_op="$p03_op --n_para $p03_n_para";
     elif [ ! -z $n_para ];then p03_op="$p03_op --n_para $n_para";fi
     STEP2_11_CMDS+="LiCSBAS03op_GACOS.py $p03_op 2>&1 | tee -a \$log"$'\n'
-    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    STEP2_11_CMDS+="$pipefall"
     ### Update GEOCmldir to be used for following steps
     GEOCmldir="$outGEOCmldir"
   fi
@@ -495,7 +500,8 @@ if [ $step -eq 04 -a $start_step -le 04 -a $end_step -ge 04 ];then
     elif [ ! -z $n_para ];then p04_op="$p04_op --n_para $n_para";fi
 
     STEP2_11_CMDS+="LiCSBAS04op_mask_unw.py $p04_op 2>&1 | tee -a \$log"$'\n'
-    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    STEP2_11_CMDS+="$pipefall"
     ### Update GEOCmldir to be used for following steps
     GEOCmldir="$outGEOCmldir"
   fi
@@ -515,7 +521,8 @@ if [ $step -eq 05 -a $start_step -le 05 -a $end_step -ge 05 ];then
     if [ ! -z $p05_n_para ];then p05_op="$p05_op --n_para $p05_n_para";
     elif [ ! -z $n_para ];then p05_op="$p05_op --n_para $n_para";fi
     STEP2_11_CMDS+="LiCSBAS05op_clip_unw.py $p05_op 2>&1 | tee -a \$log"$'\n'
-    STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+    STEP2_11_CMDS+="$pipefall"
     ### Update GEOCmldir to be used for following steps
     GEOCmldir="$outGEOCmldir"
   fi
@@ -537,13 +544,13 @@ if [ $start_step -le 11 -a $end_step -ge 11 ];then
   if [ ! -z $p11_maxbtemp ];then p11_op="$p11_op --minbtemp $p11_maxbtemp"; fi
   if [ $p11_sbovl == "y" ];then p11_op="$p11_op --sbovl"; fi
   if [ $p11_s_param == "y" ];then p11_op="$p11_op -s"; fi
-  if [ $check_only == "y" ];then
   STEP2_11_CMDS+="LiCSBAS11_check_unw.py $p11_op 2>&1 | tee -a \$log"$'\n'
-  STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+  #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
+  STEP2_11_CMDS+="$pipefall"
 fi
 
 # STEP 12: Loop closure
-STEP12_CMDS="echo 'Running Step 12: Loop closure...''"$'\n'
+STEP12_CMDS="echo 'Running Step 12: Loop closure...'"$'\n'
 if [ $start_step -le 12 -a $end_step -ge 12 ];then
   if [ "$cometdev" -eq 1 ] || [ "$p120_sbovl" == "y" ]; then
     p120_use='y'
@@ -558,8 +565,7 @@ if [ $start_step -le 12 -a $end_step -ge 12 ];then
       extra="--sbovl"
     fi
     STEP12_CMDS+="LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a \$log"$'\n'
-    STEP12_CMDS+="if [ ${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #exit 1; fi # this often fails, so only warning message"$'\n'
-
+    STEP12_CMDS+="if [ \${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #exit 1; fi # this often fails, so only warning message"$'\n'
   fi
 
   if [ $p120_sbovl != "y" ]; then
@@ -588,7 +594,7 @@ if [ $start_step -le 12 -a $end_step -ge 12 ];then
             extra="--ignore_comp"
         fi
         STEP12_CMDS+="LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a \$log"$'\n'
-        STEP12_CMDS+="if [ ${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #"$'\n'
+        STEP12_CMDS+="if [ \${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #"$'\n'
 
       fi
       fi
@@ -596,7 +602,7 @@ if [ $start_step -le 12 -a $end_step -ge 12 ];then
 fi
 
 # STEP 13: Small baseline inversion
-STEP13_CMDS="echo 'Running Step 13: Small baseline inversion...''"$'\n'
+STEP13_CMDS="echo 'Running Step 13: Small baseline inversion...'"$'\n'
 if [ $start_step -le 13 -a $end_step -ge 13 ];then
   # getting eq offsets here:
   if [ "$eqoffs" == "y" -a $eqoffs_minmag -gt 0 ]; then
@@ -640,22 +646,21 @@ if [ $start_step -le 13 -a $end_step -ge 13 ];then
   fi
 
     STEP13_CMDS+="LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a \$log"$'\n'
-    STEP13_CMDS+="pstat=(${PIPESTATUS[0]})"$'\n'
+    STEP13_CMDS+="pstat=(\${PIPESTATUS[0]})"$'\n'
 
     if [ "$p12_nullify" == "y" ];then
-      STEP13_CMDS+="if [ $pstat -ne 0 ];then"$'\n'
+      STEP13_CMDS+="if [ \$pstat -ne 0 ];then"$'\n'
       STEP13_CMDS+="  echo 'Fixing the unresolved-yet issue with NaNs in ref area by just rerunning step 13'"$'\n'
       STEP13_CMDS+="  LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a \$log"$'\n'
-      STEP13_CMDS+="pstat=(${PIPESTATUS[0]})"$'\n'
+      STEP13_CMDS+="pstat=(\${PIPESTATUS[0]})"$'\n'
       STEP13_CMDS+="fi"$'\n'
     fi
 
-    STEP13_CMDS+="if [ $pstat -ne 0 ];then exit 1; fi"$'\n'
-  fi
+    STEP13_CMDS+="if [ \$pstat -ne 0 ];then exit 1; fi"$'\n'
 fi
 
 # STEPS 14-16: Velocity, masking, filtering
-STEP14_16_CMDS="echo 'Running Steps 14-16...''"$'\n'
+STEP14_16_CMDS="echo 'Running Steps 14-16...'"$'\n'
 if [ $start_step -le 14 -a $end_step -ge 14 ];then
   p14_op=""
   if [ ! -z $p14_TSdir ];then p14_op="$p14_op -t $p14_TSdir";
@@ -669,7 +674,8 @@ if [ $start_step -le 14 -a $end_step -ge 14 ];then
     extra=''
   fi
   STEP14_16+="LiCSBAS14_vel_std.py $extra $p14_op 2>&1 | tee -a \$log"$'\n'
-  STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+  #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+  STEP14_16_CMDS+="$pipefall"
 fi
 if [ $start_step -le 15 -a $end_step -ge 15 ];then
   p15_op=""
@@ -693,7 +699,8 @@ if [ $start_step -le 15 -a $end_step -ge 15 ];then
   if [ "$p15_sbovl" == "y" ];then p15_op="$p15_op --sbovl"; fi
   if [ "$p15_n_gap_use_merged" == "y" ];then p15_op="$p15_op --n_gap_use_merged"; fi
   STEP14_16+="LiCSBAS15_mask_ts.py $p15_op 2>&1 | tee -a \$log"$'\n'
-  STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+  #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+  STEP14_16_CMDS+="$pipefall"
 fi
 if [ $start_step -le 16 -a $end_step -ge 16 ];then
   p16_op=""
@@ -723,7 +730,8 @@ if [ $start_step -le 16 -a $end_step -ge 16 ];then
     extra=''
   fi
   STEP14_16+="LiCSBAS16_filt_ts.py $extra $p16_op 2>&1 | tee -a \$log"$'\n'
-  STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+  #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
+  STEP14_16_CMDS+="$pipefall"
 fi
 ################################
 ### Create and Submit Jobs ###
