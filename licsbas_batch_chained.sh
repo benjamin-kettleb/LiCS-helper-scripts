@@ -66,7 +66,7 @@ n_para="" # Number of parallel processing in step 02-05,12,13,16. default: numbe
 gpu="n"	# y/n
 
 logdir="log"
-log="$logdir/$(date +%Y%m%d%H%M)$(basename $0 .sh)_${start_step}_${end_step}.log"
+log="$logdir/$(date +%Y%m%d%H%M)$(basename $0 .sh)_${start_step}_${end_step}.log" #Needs updating so each step has its own log file, but for now it is one log for the whole chain
 
 freq="" # default: 5.405e9 Hz
 
@@ -673,7 +673,7 @@ if [ $start_step -le 14 -a $end_step -ge 14 ];then
   else
     extra=''
   fi
-  STEP14_16+="LiCSBAS14_vel_std.py $extra $p14_op 2>&1 | tee -a \$log"$'\n'
+  STEP14_16_CMDS+="LiCSBAS14_vel_std.py $extra $p14_op 2>&1 | tee -a \$log"$'\n'
   #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
   STEP14_16_CMDS+="$pipefall"
 fi
@@ -698,7 +698,7 @@ if [ $start_step -le 15 -a $end_step -ge 15 ];then
   if [ "$p15_noautoadjust" == "y" ];then p15_op="$p15_op --noautoadjust"; fi
   if [ "$p15_sbovl" == "y" ];then p15_op="$p15_op --sbovl"; fi
   if [ "$p15_n_gap_use_merged" == "y" ];then p15_op="$p15_op --n_gap_use_merged"; fi
-  STEP14_16+="LiCSBAS15_mask_ts.py $p15_op 2>&1 | tee -a \$log"$'\n'
+  STEP14_16_CMDS+="LiCSBAS15_mask_ts.py $p15_op 2>&1 | tee -a \$log"$'\n'
   #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
   STEP14_16_CMDS+="$pipefall"
 fi
@@ -729,7 +729,7 @@ if [ $start_step -le 16 -a $end_step -ge 16 ];then
   else
     extra=''
   fi
-  STEP14_16+="LiCSBAS16_filt_ts.py $extra $p16_op 2>&1 | tee -a \$log"$'\n'
+  STEP14_16_CMDS+="LiCSBAS16_filt_ts.py $extra $p16_op 2>&1 | tee -a \$log"$'\n'
   #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
   STEP14_16_CMDS+="$pipefall"
 fi
