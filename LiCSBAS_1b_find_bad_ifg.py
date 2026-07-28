@@ -8,9 +8,36 @@ from osgeo import gdal
 import LiCSBAS_tools_lib as tools_lib
 from matplotlib.widgets import Button
 
-geocdir = './GEOC'
-ifgdates = tools_lib.get_ifgdates(geocdir)
+jasmin = True
+wrapped = True
+cmap = tools_lib.get_cmap("cmc.roma_r")
+ifgs_to_check = False
+
+if jasmin:
+    frame_name = os.path.basename(os.getcwd())
+    track=frame_name[:3]
+    LiCSAR_public = os.environ["LiCSAR_public"]
+    geocdir=os.path.join(LiCSAR_public, track, frame_name, "interferograms")
+    to_exclude_savefile = f'./{frame_name}_to_exclue.txt'
+    to_delete_savefile = f'./{frame_name}_to_delete.txt'
+else:
+    geocdir = './GEOC'
+    to_delete_savefile = False
+    to_exclude_savefile = False
+
+if ifgs_to_check:    
+    with open(ifgs_to_check) as f:
+        ifg_dates = [line.strip() for line in f]
+else:
+
+
 n_ifg = len(ifgdates)
+
+if wrapped:
+    ifg_file_extension = '.geo.diff_pha.tif'
+else:
+    ifg_file_extension ='.geo.unw.tif'
+
 """
 ### First check if float already exist
 
@@ -38,13 +65,22 @@ bad_epoc = []
 bad_ifg = []
 deleted_ifg = []
 
-review_mode = False  # Flag to indicate if we are reviewing bad_ifg
+if ifgs_to_check:
+    review_mode = True
+else:
+    review_mode = False  # Flag to indicate if we are reviewing bad_ifg
 review_index = 0     # Index for reviewing bad_ifg
 
 def update_plot(frame):
     global current_index, paused, review_mode
-    if paused or review_mode:
+    if paused:
         return
+    if review_mode:
+        if current_index == 0 and review_index == 0:
+            print("Going straight into review mode")
+            show_review_image()
+        return
+
     if current_index >= len(ifgdates2):
         # Switch to review mode when the main animation ends
         review_mode = True
@@ -86,16 +122,16 @@ def print_current_ifgd(event):
 print("Checking Valid IFGS")
 # Collect valid ifgdates
 for i, ifgd in enumerate(ifgdates):
-    unw_tiffile = os.path.join(geocdir, ifgd, ifgd + '.geo.unw.tif')
+    unw_tiffile = os.path.join(geocdir, ifgd, ifgd + ifg_file_extension)
     if not os.path.exists(unw_tiffile):
-        print('  No {} found. Skip'.format(ifgd + '.geo.unw.tif'), flush=True)
+        print('  No {} found. Skip'.format(ifgd + ifg_file_extension), flush=True)
         continue
     try:
         unw = gdal.Open(unw_tiffile).ReadAsArray()
         unw[unw == 0] = np.nan
         ifgdates2.append(ifgd)
     except:
-        print('  {} cannot open. Skip'.format(ifgd + '.geo.unw.tif'), flush=True)
+        print('  {} cannot open. Skip'.format(ifgd + ifg_file_extension), flush=True)
         continue
 
 # Create the plot
@@ -112,13 +148,14 @@ btn_print = Button(ax_print, 'Print')
 btn_print.on_clicked(print_current_ifgd)
 
 def show_image(index):
+    global cmap
     """Helper function to display the image at the given index."""
     ifgd = ifgdates2[index]
-    unw_tiffile = os.path.join(geocdir, ifgd, ifgd + '.geo.unw.tif')
+    unw_tiffile = os.path.join(geocdir, ifgd, ifgd + ifg_file_extension)
     unw = gdal.Open(unw_tiffile).ReadAsArray()
     unw[unw == 0] = np.nan
     ax.clear()
-    ax.imshow(unw, cmap='viridis')
+    ax.imshow(unw, cmap=cmap)
     ax.set_title(f"Image: {ifgd}")
     
     # Check if the ifg contains an epoch in bad_epoc
@@ -152,23 +189,19 @@ btn_prev.on_clicked(previous_image)
 
 def show_review_image():
     """Display the current interferogram from the bad_ifg list."""
-    global review_index, deleted_fig
+    global review_index, deleted_ifg, cmap, ifg_file_extension
     if review_index < len(bad_ifg):
         ifgd = bad_ifg[review_index]
-        unw_tiffile = os.path.join(geocdir, ifgd, ifgd + '.geo.unw.tif')
+        unw_tiffile = os.path.join(geocdir, ifgd, ifgd + ifg_file_extension)
         unw = gdal.Open(unw_tiffile).ReadAsArray()
         unw[unw == 0] = np.nan
         ax.clear()
-        ax.imshow(unw, cmap='viridis')
+        ax.imshow(unw, cmap=cmap)
         # Set the title in red for review mode
         ax.set_title(f"Reviewing: {ifgd}", color='red')
     else:
         print("Review of bad_ifg list completed.")
         plt.close()  # Close the plot when review is done
-        print("Saving deleted IFGs to deleted_ifg.txt")
-        with open(filename, "w") as file:
-            for to_del in deleted_ifg:
-                file.write(f"{to_del}\n")
 
 def keep_ifg(event):
     """Keep the current interferogram and move to the next one."""
@@ -179,25 +212,48 @@ def keep_ifg(event):
 
 def delete_ifg(event):
     """Delete the folder containing the current interferogram."""
-    global review_index, deleted_ifg
+    global review_index, deleted_ifg, to_delete_savefile
     if review_index < len(bad_ifg):
+
         ifgd = bad_ifg[review_index]
-        ifg_folder = os.path.join(geocdir, ifgd)
-        try:
-            shutil.rmtree(ifg_folder)  # Delete the folder
-            print(f"Deleted folder for {ifgd}")
-            deleted_ifg.append(ifgd)
-        except Exception as e:
-            print(f"Error deleting folder for {ifgd}: {e}")
+        if not to_delete_savefile:
+            ifg_folder = os.path.join(geocdir, ifgd)
+            try:
+                shutil.rmtree(ifg_folder)  # Delete the folder
+                print(f"Deleted folder for {ifgd}")
+                deleted_ifg.append(ifgd)
+            except Exception as e:
+                print(f"Error deleting folder for {ifgd}: {e}")
+
+        else:
+            with open(to_delete_savefile, 'a') as file:
+                file.write("f{ifgd}\n")
         review_index += 1
         show_review_image()
+
+def exclude_ifg(event):
+    """Add IFG to exclude path"""
+    global review_index, deleted_ifg, to_exclude_savefile
+    if review_index < len(bad_ifg):
+
+        ifgd = bad_ifg[review_index]
+        with open(to_exclude_savefile) as file:
+            file.write("f{ifgd}\n")
+        review_index += 1
 
 # Reposition "Keep" and "Delete" buttons to the far left of the frame
 ax_keep = plt.axes([0.05, 0.05, 0.1, 0.075])  # Adjusted position
 btn_keep = Button(ax_keep, 'Keep')
 btn_keep.on_clicked(keep_ifg)
 
-ax_delete = plt.axes([0.16, 0.05, 0.1, 0.075])  # Adjusted position
+if jasmin:
+    ax_exclude = plt.axes([0.16, 0.05, 0.1, 0.075])
+    btn_excl = Button(ax_exclude, 'Exclude')
+    btn_keep.on_clicked(exclude_ifg)
+
+    ax_delete = plt.axes([0.27, 0.05, 0.1, 0.075])
+else:
+    ax_delete = plt.axes([0.16, 0.05, 0.1, 0.075])  # Adjusted position
 btn_delete = Button(ax_delete, 'Delete')
 btn_delete.on_clicked(delete_ifg)
 

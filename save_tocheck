@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Substring to remove
+REMOVE=".geo.unw.png"
+
+# Output file
+OUTFILE="ignore.txt"
+
+sub_str=".aux.xml"
+
+# Clear output file
+> "$OUTFILE"
+
+# Loop through files in current directory
+for file in *; do
+    # Skip directories
+    [ -f "$file" ] || continue
+
+    if [[ "$file" == *"$REMOVE"* ]]; then    
+      # Remove the substring
+      newname="${file//$REMOVE/}"
+
+      if [[ "$newname" == *"$sub_str"* ]]; then
+        echo ".aux.xml found, ignoring"
+      else
+    
+        # Write to output file
+        echo "$newname" >> "$OUTFILE"
+  
+      fi
+    fi
+done
+
+echo "Processed list saved to $OUTFILE"

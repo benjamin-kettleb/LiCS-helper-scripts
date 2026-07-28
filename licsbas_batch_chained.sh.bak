@@ -1,75 +1,59 @@
 #!/bin/bash -eu
 
-# LiCSBAS Jasmin Job Submission Script written by COMET (Milan, Muhammet etc. - https://github.com/comet-licsar/LiCSBAS/blob/main/batch_LiCSBAS.sh). Split into many jobs by Benji
-# This script generates and submits jobs to Jasmin with dependencies
-# 
-# Job structure:
-#  - Jasmin_LB_01.sh (Step 1)
-#  - Jasmin_LB_02_11.sh (Steps 2-11)
-#  - Jasmin_LB_12.sh (Step 12)
-#  - Jasmin_LB_13.sh (Step 13)
-#  - Jasmin_LB_14_16.sh (Steps 14-16)
-#
 # LiCSBAS steps:
 #  01: LiCSBAS01_get_geotiff.py
 #  02to05: LiCSBAS02to05_unwrap.py   or   02: LiCSBAS02_ml_prep.py
 #                                         03: LiCSBAS03op_GACOS.py (optional)
-#                                         04: LiCSBAS04op_mask.py (optional)
+#                                         04: LiCSBAS04op_mask_unw.py (optional)
 #                                         05: LiCSBAS05op_clip_unw.py (optional)
 #  11: LiCSBAS11_check_unw.py
-#  (optional) 120: LiCSBAS120_choose_reference.py
+#  (optional) 120: LiCSBAS120_choose_reference.py   - RECOMMENDED, especially if nullification is used, thus added to cometdev
 #  12: LiCSBAS12_loop_closure.py
 #  13: LiCSBAS13_sb_inv.py
 #  14: LiCSBAS14_vel_std.py
 #  15: LiCSBAS15_mask_ts.py
 #  16: LiCSBAS16_filt_ts.py
 
+#
+# Status of COMET dev version - the experimental functions are turned on with 
+#
+# This script generates and submits jobs to Jasmin with dependencies
+# Job structure:
+#  - Jasmin_LB_1.sh (Step 1)
+#  - Jasmin_LB_2_11.sh (Steps 2-11)
+#  - Jasmin_LB_12.sh (Step 12)
+#  - Jasmin_LB_13.sh (Step 13)
+#  - Jasmin_LB_14_15.sh (Steps 14-15)
+#
 #################
 ### Settings ####
 #################
 start_step="01"	# 01-05, 11-16
 end_step="16"	# 01-05, 11-16
 
-## Jasmin Default Configuration ##
-JASMIN_QOS_DEFAULT="high"		# Default QOS queue: normal, high, long, etc.
-JASMIN_TIME_DEFAULT="24:00:00"		# Default time limit (HH:MM:SS)
-JASMIN_MEM_DEFAULT="16G"			# Default memory limit
-JASMIN_CPUS_DEFAULT="6"			# Default number of CPUs per job
-
-## Per-step Overrides (leave blank to use defaults above) ##
-JASMIN_TIME_STEP1=""			# Leave blank to use JASMIN_TIME_DEFAULT
-JASMIN_TIME_STEP2_11=""			# Leave blank to use JASMIN_TIME_DEFAULT
-JASMIN_TIME_STEP12=""			# Leave blank to use JASMIN_TIME_DEFAULT
-JASMIN_TIME_STEP13="48:00:00"			# Leave blank to use JASMIN_TIME_DEFAULT
-JASMIN_TIME_STEP14_16=""		# Leave blank to use JASMIN_TIME_DEFAULT
-JASMIN_MEM_STEP1=""			# Leave blank to use JASMIN_MEM_DEFAULT
-JASMIN_MEM_STEP2_11=""			# Leave blank to use JASMIN_MEM_DEFAULT
-JASMIN_MEM_STEP12=""			# Leave blank to use JASMIN_MEM_DEFAULT
-JASMIN_MEM_STEP13=""			# Leave blank to use JASMIN_MEM_DEFAULT
-JASMIN_MEM_STEP14_16=""			# Leave blank to use JASMIN_MEM_DEFAULT
-JASMIN_CPUS_STEP1=""			# Leave blank to use JASMIN_CPUS_DEFAULT
-JASMIN_CPUS_STEP2_11=""			# Leave blank to use JASMIN_CPUS_DEFAULT
-JASMIN_CPUS_STEP12=""			# Leave blank to use JASMIN_CPUS_DEFAULT
-JASMIN_CPUS_STEP13=""			# Leave blank to use JASMIN_CPUS_DEFAULT
-JASMIN_CPUS_STEP14_16=""		# Leave blank to use JASMIN_CPUS_DEFAULT
-
-### Chain Options
-SUBMIT_JOBS="y"				# y/n. Set to 'y' to submit jobs to Jasmin, 'n' to only generate scripts
-p13_num_attempt="3"
-
-
-## Data Source Configuration ##
-LINK_GEOC_DATA="y"			# y/n. If 'y', symlink existing GEOC data instead of downloading. If 'n', download from LiCSAR.
-GEOC_LINK_SOURCE=""			# Path to existing GEOC directory. If empty and LINK_GEOC_DATA='y', will auto-derive from $LiCSAR_public/track/frame/interferograms
-IGNORE_LIST="y"                         # Path to list of ifg to not copy over. If 'y', path becomes frame.ifg_to_ignore If empty, none are ignored
-
+## Jasmin Job Configuration ##
+JASMIN_QOS="high"			# QOS queue: normal, high, long, etc.
+JASMIN_TIME_STEP1="2:00:00"		# Time limit for Step 1 (HH:MM:SS)
+JASMIN_TIME_STEP2_11="4:00:00"		# Time limit for Steps 2-11
+JASMIN_TIME_STEP12="2:00:00"		# Time limit for Step 12
+JASMIN_TIME_STEP13="4:00:00"		# Time limit for Step 13
+JASMIN_TIME_STEP14_15="2:00:00"		# Time limit for Steps 14-15
+JASMIN_MEM_STEP1="4G"			# Memory limit for Step 1
+JASMIN_MEM_STEP2_11="8G"		# Memory limit for Steps 2-11
+JASMIN_MEM_STEP12="8G"			# Memory limit for Step 12
+JASMIN_MEM_STEP13="16G"			# Memory limit for Step 13
+JASMIN_MEM_STEP14_15="8G"		# Memory limit for Steps 14-15
+JASMIN_CPUS="4"				# Number of CPUs per job
+SUBMIT_JOBS="n"				# y/n. Set to 'y' to submit jobs to Jasmin, 'n' to only generate scripts
 
 cometdev='0' # shortcut to use COMET's experimental/dev functions. At this moment, '1' will turn on the nullification. Recommended: 0
+# sbovl='n' # if 'y', LiCSBAS will apply on sbovls  ## TODO
 eqoffs="n"  # if 'y', it will do: get_eq_offsets, then invert. if singular_gauss, then set use of model (not recommended now, experimental/need some work).
 nlook="1"	# multilook factor, used in step02
 GEOCmldir="GEOCml${nlook}"	# If start from 11 or later after doing 03-05, use e.g., GEOCml${nlook}GACOSmaskclip
 n_para="" # Number of parallel processing in step 02-05,12,13,16. default: number of usable CPU
 gpu="n"	# y/n
+check_only="n" # y/n. If y, not run scripts and just show commands to be done
 
 logdir="log"
 log="$logdir/$(date +%Y%m%d%H%M)$(basename $0 .sh)_${start_step}_${end_step}.log"
@@ -102,6 +86,7 @@ p02to05_cliparea_geo=$p05_clip_range_geo # setting the clip range, e.g. 130.11/1
 p02to05_n_para=$n_para
 p02to05_op_GEOCdir="" # by default, if none, it will use GEOC directory
 
+
 ### Frequently used options. If blank, use default. ###
 p01_start_date=""	# default: 20141001
 p01_end_date=""	# default: today
@@ -121,7 +106,6 @@ p12_multi_prime="y"	# y/n. y recommended
 p12_nullify="" # y/n. y recommended
 p12_rm_ifg_list=""	# List file containing ifgs to be manually removed
 p12_skippngs="" # y/n. n by default
-p13_load_patches="n"
 p13_nullify_noloops="" # y/n. n by default (but it is recommended to use this option with p12_nullify)
 p13_ignore_nullification="" # y/n. n by default
 p13_singular="" # y/n. n by default
@@ -143,9 +127,9 @@ p15_n_gap_use_merged="y" # default: 'y'
 p15_sbovl="n"
 p16_filtwidth_km=""	# default: 2 km
 p16_filtwidth_yr=""	# default: avg_interval*3 yr
-p16_deg_deramp="1"	# 1, bl, or 2. default: no deramp
+p16_deg_deramp=""	# 1, bl, or 2. default: no deramp
 p16_demerr="n"	# y/n. default: n
-p16_hgt_linear="y"	# y/n. default: n
+p16_hgt_linear="n"	# y/n. default: n
 p16_hgt_min=""	# default: 200 (m)
 p16_hgt_max=""  # default: 10000 (m)
 p16_range=""	# e.g. 10:100/20:200 (ix start from 0)
@@ -205,21 +189,12 @@ p16_TSdir=""    # default: TS_$GEOCmldir
 p16_nomask="n"	# y/n. default: n
 p16_n_para=$n_para   # default: # of usable CPU
 
+
 # eqoffs
 eqoffs_minmag="0"  # min magnitude of earthquakes to auto-find. 0 means skipping the estimation.
 eqoffs_txtfile="eqoffsets.txt"  # path to txt file containing custom-set earthquake dates (if eqoffs_minmag is disabled/0) or that will use results of auto-find
 eqoffs_buffer="0.1"  # buffer (in degrees, assuming work with WGS-84 geocoded data) to search for earthquakes (if eqoffs_minmag is set)
 
-# Initiate dates
-if [ -z "$p01_start_date" ]; then
-  p01_start_date="20141001"
-fi
-if [ -z "$p01_end_date" ]; then
-  p01_end_date=$(date +%Y%m%d)
-fi
-
-echo "Start Date: $p01_start_date"
-echo "end date: $p01_end_date"
 
 ################################
 ### Job Generation & Submit ###
@@ -233,56 +208,17 @@ echo "Log file:   $log"
 echo ""
 mkdir -p $logdir
 
-# Extract frame name from p01_frame, or use current directory name if not set
-FRAME_NAME="${p01_frame:-$(basename $(pwd))}"
+# Extract frame name from p01_frame if available
+FRAME_NAME="${p01_frame:-NOFRAME}"
 echo "Frame name: $FRAME_NAME"
 echo ""
 
-# Extract track from frame name (first 3 digits, remove leading zeros)
-track=$(echo "$FRAME_NAME" | cut -c -3 | sed 's/^0//' | sed 's/^0//')
-echo "Track: $track"
-
-# Auto-derive GEOC_LINK_SOURCE if LINK_GEOC_DATA is enabled and source path is empty
-if [ "$LINK_GEOC_DATA" == "y" ] && [ -z "$GEOC_LINK_SOURCE" ]; then
-  if [ ! -z "$LiCSAR_public" ]; then
-    GEOC_LINK_SOURCE="$LiCSAR_public/$track/$FRAME_NAME/interferograms"
-    echo "Auto-derived GEOC_LINK_SOURCE: $GEOC_LINK_SOURCE"
-  else
-    echo "WARNING: LINK_GEOC_DATA='y' but LiCSAR_public environment variable not set and GEOC_LINK_SOURCE not specified"
-  fi
-fi
-echo ""
-
-if [ "$IGNORE_LIST" == "y" ]; then
-  IGNORE_LIST="$FRAME_NAME.ifg_to_ignore"
-fi
-
-# Initialize job IDs
-JOB_ID_01=""
-JOB_ID_02_11=""
-JOB_ID_12=""
-JOB_ID_13=""
-JOB_ID_14_16=""
-
-# Function to create and submit a job script
-create_and_submit_job() {
-  local step_name=$1        # e.g., "1", "2_11", "12", etc.
-  local job_script=$2       # e.g., "Jasmin_LB_1.sh"
-  local job_name=$3         # e.g., "Jasmin_LB_1_frame_name"
-  local time_limit=$4       # e.g., "2:00:00"
-  local mem_limit=$5        # e.g., "4G"
-  local cpus=$6             # e.g., "4"
-  local dep_job_id=$7       # Job ID to depend on (empty for first job)
-  local commands=$8         # Pre-built commands to execute
-  
-  # Calculate total memory: mem_limit * cpus
-  local mem_num=$(echo "$mem_limit" | sed 's/[A-Za-z]*$//')
-  local mem_unit=$(echo "$mem_limit" | sed 's/^[0-9]*//')
-  local total_mem=$((mem_num * cpus))$mem_unit
-  
-  echo "Creating job script: $job_script (CPUs: $cpus, Total Memory: $total_mem)" >&2
-  
-  cat > "$job_script" << 'JOBHEADER'
+# Function to create job header
+create_job_header() {
+  local job_name=$1
+  local time_limit=$2
+  local mem_limit=$3
+  cat << 'JOBHEADER'
 #!/bin/bash
 #SBATCH --job-name=JOBNAME_PLACEHOLDER
 #SBATCH --qos=QOS_PLACEHOLDER
@@ -291,161 +227,124 @@ create_and_submit_job() {
 #SBATCH --cpus-per-task=CPUS_PLACEHOLDER
 #SBATCH --output=JOBNAME_PLACEHOLDER.out
 #SBATCH --error=JOBNAME_PLACEHOLDER.err
-#SBATCH --account='nceo_geohazards'
-#SBATCH --partition='standard'
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=$USER@example.com
 
 set -e
-echo "Starting LiCSBAS Step STEP_PLACEHOLDER at $(date)"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Job Node: $SLURM_NODELIST"
-echo ""
 
 JOBHEADER
+  # Now substitute placeholders
+  sed "s|JOBNAME_PLACEHOLDER|$job_name|g; s|QOS_PLACEHOLDER|$JASMIN_QOS|g; s|TIME_PLACEHOLDER|$time_limit|g; s|MEM_PLACEHOLDER|$mem_limit|g; s|CPUS_PLACEHOLDER|$JASMIN_CPUS|g"
+}
 
-  # Inject configuration variables into the job script
-  cat >> "$job_script" << VARIABLES
-
-# Configuration variables from main script
-logdir="$logdir"
-log="$log"
-
-VARIABLES
-
-  # Add the pre-built commands
-  echo "$commands" >> "$job_script"
-
-  # Substitute SBATCH parameters
-  sed -i "s|JOBNAME_PLACEHOLDER|$job_name|g; s|QOS_PLACEHOLDER|$JASMIN_QOS|g; s|TIME_PLACEHOLDER|$time_limit|g; s|MEM_PLACEHOLDER|$total_mem|g; s|CPUS_PLACEHOLDER|$cpus|g; s|STEP_PLACEHOLDER|$step_name|g" "$job_script"
+# Function to write job script
+write_job_script() {
+  local script_file=$1
+  local job_name=$2
+  local time_limit=$3
+  local mem_limit=$4
   
-  # Add completion message
-  cat >> "$job_script" << 'JOBFOOTER'
+  # Create the job header
+  create_job_header "$job_name" "$time_limit" "$mem_limit" > "$script_file"
+  
+  # Add common settings
+  echo "" >> "$script_file"
+  echo "# LiCSBAS Job Script for $job_name" >> "$script_file"
+  echo "# Generated: $(date)" >> "$script_file"
+  echo "" >> "$script_file"
+}
 
-echo ""
-echo "Completed LiCSBAS Step at $(date)"
-
-JOBFOOTER
-
-  chmod +x "$job_script"
+# Function to submit job
+submit_job() {
+  local script_file=$1
+  local dep_job_id=$2
+  
   if [ "$SUBMIT_JOBS" == "y" ]; then
-    IFS="_" read -r comp_t prog_t step_n_t frame_t <<< "$job_name"
-    
     if [ -z "$dep_job_id" ]; then
-      echo "  Submitting to Jasmin (no dependency)..." >&2
-      local JID=$(sbatch "$job_script" | awk '{print $NF}')
-      echo "  Job ID: $JID" >&2
-      echo "$JID"
-    elif [[ "${step_n_t:0:2}" == "13" && "${step_n_t: -1}" != "3" && "${step_n_t: -1}" != "a" ]]; then
-      echo "  Submitting to Jasmin (depends on job $dep_job_id Terminating)..." >&2
-      local JID=$(sbatch --dependency=afterany:$dep_job_id "$job_script" | awk '{print $NF}')
-      echo "  Job ID: $JID" >&2
-      echo "$JID"
+      echo "Submitting $script_file..."
+      JOB_ID=$(sbatch "$script_file" | awk '{print $NF}')
+      echo "Submitted with Job ID: $JOB_ID"
+      echo "$JOB_ID"
     else
-      echo "  Submitting to Jasmin (depends on job $dep_job_id successfully completing)..." >&2
-      local JID=$(sbatch --dependency=afterok:$dep_job_id "$job_script" | awk '{print $NF}')
-      echo "  Job ID: $JID" >&2
-      echo "$JID"
+      echo "Submitting $script_file (dependency: $dep_job_id)..."
+      JOB_ID=$(sbatch --dependency=afterok:$dep_job_id "$script_file" | awk '{print $NF}')
+      echo "Submitted with Job ID: $JOB_ID (depends on $dep_job_id)"
+      echo "$JOB_ID"
     fi
   else
-    echo "  Created but not submitted (SUBMIT_JOBS='n')" >&2
-    echo "" >&2
+    chmod +x "$script_file"
+    echo "Created job script (not submitted): $script_file"
   fi
 }
 
-add_pipefall() {
-    local cmd="$1"
-    echo "${cmd}if [ \${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi"
-}
-
-pipefall="if [ \${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi"$'\n'$'\n'
-
-# Build function for STEP 1
-################################
-### Apply Default Configuration ###
-################################
-
-# Apply defaults for any unset time limits
-JASMIN_TIME_STEP1="${JASMIN_TIME_STEP1:-$JASMIN_TIME_DEFAULT}"
-JASMIN_TIME_STEP2_11="${JASMIN_TIME_STEP2_11:-$JASMIN_TIME_DEFAULT}"
-JASMIN_TIME_STEP12="${JASMIN_TIME_STEP12:-$JASMIN_TIME_DEFAULT}"
-JASMIN_TIME_STEP13="${JASMIN_TIME_STEP13:-$JASMIN_TIME_DEFAULT}"
-JASMIN_TIME_STEP14_16="${JASMIN_TIME_STEP14_16:-$JASMIN_TIME_DEFAULT}"
-
-# Apply defaults for any unset memory limits
-JASMIN_MEM_STEP1="${JASMIN_MEM_STEP1:-$JASMIN_MEM_DEFAULT}"
-JASMIN_MEM_STEP2_11="${JASMIN_MEM_STEP2_11:-$JASMIN_MEM_DEFAULT}"
-JASMIN_MEM_STEP12="${JASMIN_MEM_STEP12:-$JASMIN_MEM_DEFAULT}"
-JASMIN_MEM_STEP13="${JASMIN_MEM_STEP13:-$JASMIN_MEM_DEFAULT}"
-JASMIN_MEM_STEP14_16="${JASMIN_MEM_STEP14_16:-$JASMIN_MEM_DEFAULT}"
-
-# Apply defaults for any unset CPU counts
-JASMIN_CPUS_STEP1="${JASMIN_CPUS_STEP1:-$JASMIN_CPUS_DEFAULT}"
-JASMIN_CPUS_STEP2_11="${JASMIN_CPUS_STEP2_11:-$JASMIN_CPUS_DEFAULT}"
-JASMIN_CPUS_STEP12="${JASMIN_CPUS_STEP12:-$JASMIN_CPUS_DEFAULT}"
-JASMIN_CPUS_STEP13="${JASMIN_CPUS_STEP13:-$JASMIN_CPUS_DEFAULT}"
-JASMIN_CPUS_STEP14_16="${JASMIN_CPUS_STEP14_16:-$JASMIN_CPUS_DEFAULT}"
-
-# Apply defaults for CPUS and QOS if unset
-JASMIN_QOS="${JASMIN_QOS:-$JASMIN_QOS_DEFAULT}"
-
-################################
-### Establish if Reuwrapping ###
-################################
-
+# Setup reunwrapping if needed
 if [ $run_reunwrapping == "y" ]; then
-  # do some additional settings for the reunwrapping:
   p01_get_pha="y"
-  p01_get_mli="y" # not really needed but useful for weighting in multilooking
-  order_op03_05='' #skipping the optional 03-05 steps, contained here
+  p01_get_mli="y"
+  order_op03_05=''
   skipstep02=1
 else
   skipstep02=0
 fi
 
-################################
-### Build Commands for Each Step ###
-################################
+##################################
+### STEP 1: Generate Job Script (Step 1)
+##################################
+if [ $start_step -le 01 -a $end_step -ge 01 ];then
+  JOB_NAME="Jasmin_LB_1_${FRAME_NAME}"
+  JOB_SCRIPT="Jasmin_LB_1.sh"
+  
+  write_job_script "$JOB_SCRIPT" "$JOB_NAME" "$JASMIN_TIME_STEP1" "$JASMIN_MEM_STEP1"
+  
+  # Build step 1 command
+  p01_op=""
+  if [ ! -z $p01_frame ];then p01_op="$p01_op -f $p01_frame"; fi
+  if [ ! -z $p01_start_date ];then p01_op="$p01_op -s $p01_start_date"; fi
+  if [ ! -z $p01_end_date ];then p01_op="$p01_op -e $p01_end_date"; fi
+  if [ ! -z $p01_n_para ];then p01_op="$p01_op --n_para $p01_n_para"; fi
+  if [ "$p01_sbovl" == "y" ]; then p01_op="$p01_op --sbovl"; fi
+  if [ "$p01_rngoff" == "y" ]; then p01_op="$p01_op --rngoff"; fi
+  if [ "$p01_get_gacos" == "y" ]; then p01_op="$p01_op --get_gacos"; fi
+  if [ "$p01_get_pha" == "y" ]; then p01_op="$p01_op --get_pha"; fi
+  if [ "$p01_get_mli" == "y" ]; then p01_op="$p01_op --get_mli"; fi
+  
+  # Add command to job script
+  echo "# Step 1: Get GeoTIFF data" >> "$JOB_SCRIPT"
+  echo "LiCSBAS01_get_geotiff.py $p01_op 2>&1 | tee -a $log" >> "$JOB_SCRIPT"
+  echo "if [ \${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi" >> "$JOB_SCRIPT"
+  
+  chmod +x "$JOB_SCRIPT"
+  JOB_ID_1=$(submit_job "$JOB_SCRIPT" "")
+fi
 
-# STEP 1: Get GEOC data
-STEP1_CMDS="echo 'Running Step 1: Get GeoTIFF data...'"$'\n'
-if [ "$LINK_GEOC_DATA" == "y" ]; then
-  STEP1_CMDS+="echo 'Linking GEOC data from: $GEOC_LINK_SOURCE'"$'\n'
-  #STEP1_CMDS+="mkdir -p GEOC && cd GEOC && for file in $GEOC_LINK_SOURCE/*; do ln -s \"\$file\" . 2>/dev/null || true; done && cd .."$'\n'
-  #STEP1_CMDS+="\$LiCS_helper_scripts/copy_meta.sh $FRAME_NAME"
-  STEP1_CMDS+="mkdir -p GEOC && cd GEOC && "$'\n'
-  STEP1_CMDS+="for file in $GEOC_LINK_SOURCE/*; do"$'\n'
-  STEP1_CMDS+='  pair=$(basename "$file") && d1=${pair%%_*} && d2=${pair##*_}'$'\n'
-  #STEP1_CMDS+="  if [ \"$d1\" -ge $p01_start_date ] && [ \"$d2\" -le $p01_end_date ]; then ln -s "$file" . 2>/dev/null || true; fi"$'\n'
-  STEP1_CMDS+="  if [ \"\$d1\" -ge $p01_start_date ] && [ \"\$d2\" -le $p01_end_date ]; then ln -s \"\$file\" . 2>/dev/null || true; fi"$'\n'
-  STEP1_CMDS+="done && cd .. && \$LiCS_helper_scripts/copy_meta.sh $FRAME_NAME"$'\n'
-
-
-
-else
-  if [ $start_step -le 01 -a $end_step -ge 01 ];then
-    p01_op=""
-    if [ ! -z $p01_frame ];then p01_op="$p01_op -f $p01_frame"; fi
-    if [ ! -z $p01_start_date ];then p01_op="$p01_op -s $p01_start_date"; fi
-    if [ ! -z $p01_end_date ];then p01_op="$p01_op -e $p01_end_date"; fi
-    if [ ! -z $p01_n_para ];then p01_op="$p01_op --n_para $p01_n_para"; fi
-    # Add --sbovl option if p01_sbovl is "y"
-    if [ "$p01_sbovl" == "y" ]; then p01_op="$p01_op --sbovl"; fi
-    if [ "$p01_rngoff" == "y" ]; then p01_op="$p01_op --rngoff"; fi
+##################################
+### STEP 2-11: Generate Job Script (Steps 2-11)  
+##################################
+if [ $start_step -le 11 -a $end_step -ge 02 ];then
+  JOB_NAME="Jasmin_LB_2_11_${FRAME_NAME}"
+  JOB_SCRIPT="Jasmin_LB_2_11.sh"
+  
+  write_job_script "$JOB_SCRIPT" "$JOB_NAME" "$JASMIN_TIME_STEP2_11" "$JASMIN_MEM_STEP2_11"
+  p01_op=""
+  if [ ! -z $p01_frame ];then p01_op="$p01_op -f $p01_frame"; fi
+  if [ ! -z $p01_start_date ];then p01_op="$p01_op -s $p01_start_date"; fi
+  if [ ! -z $p01_end_date ];then p01_op="$p01_op -e $p01_end_date"; fi
+  if [ ! -z $p01_n_para ];then p01_op="$p01_op --n_para $p01_n_para"; fi
+  # Add --sbovl option if p01_sbovl is "y"
+  if [ "$p01_sbovl" == "y" ]; then p01_op="$p01_op --sbovl"; fi
+  if [ "$p01_rngoff" == "y" ]; then p01_op="$p01_op --rngoff"; fi
     if [ "$p01_get_gacos" == "y" ]; then p01_op="$p01_op --get_gacos"; fi
     if [ "$p01_get_pha" == "y" ]; then p01_op="$p01_op --get_pha"; fi
     if [ "$p01_get_mli" == "y" ]; then p01_op="$p01_op --get_mli"; fi
 
-    STEP1_CMDS+="LiCSBAS01_get_geotiff.py $p01_op 2>&1 | tee -a \$log"$'\n'
-    #STEP1_CMDS=$(add_pipefall "$STEP1_CMDS")
-    STEP1_CMDS+="$pipefall"
+  if [ $check_only == "y" ];then
+    echo "LiCSBAS01_get_geotiff.py $p01_op"
+  else
+    LiCSBAS01_get_geotiff.py $p01_op 2>&1 | tee -a $log
+    if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
   fi
 fi
 
-if [ ! -z $IGNORE_LIST ]; then
-  STEP1_CMDS+="cd GEOC && xargs -r -d '\n' rm -rf < ../$IGNORE_LIST && cd .."$'\n'
-fi
-
-# STEPS 2-11: ML Prep and unwrap
-STEP2_11_CMDS="echo 'Running Steps 2-11...'"$'\n'
 if [ "$skipstep02" -eq 1 ]; then
   p02to05_op=""
 
@@ -467,9 +366,13 @@ if [ "$skipstep02" -eq 1 ]; then
   if [ "$p02to05_hgtcorr" == "y" ]; then p02to05_op="$p02to05_op --hgtcorr"; fi
   if [ "$p02to05_gacos" == "y" ]; then p02to05_op="$p02to05_op --gacos"; fi
 
-  STEP2_11_CMDS+="LiCSBAS02to05_unwrap.py $p02to05_op 2>&1 | tee -a \$log"$'\n'
-  #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
-  STEPS2_11_CMDS+="$pipefall"
+  # Execute or check-only mode
+  if [ "$check_only" == "y" ]; then
+    echo "LiCSBAS02to05_unwrap.py $p02to05_op"
+  else
+    LiCSBAS02to05_unwrap.py $p02to05_op 2>&1 | tee -a "$log"
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then exit 1; fi
+  fi
 
 else
   # Run step 02 if not skipped
@@ -495,9 +398,13 @@ else
 
     if [ "$p02_sbovl" == "y" ]; then p02_op="$p02_op --sbovl"; fi
     if [ "$p02_rngoff" == "y" ]; then p02_op="$p02_op --rngoff"; fi
-    STEP2_11_CMDS+="LiCSBAS02_ml_prep.py $p02_op 2>&1 | tee -a \$log"$'\n'
-    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
-    STEP2_11_CMDS+="$pipefall"
+
+  if [ $check_only == "y" ];then
+      echo "LiCSBAS02_ml_prep.py $p02_op"
+    else
+    LiCSBAS02_ml_prep.py $p02_op 2>&1 | tee -a $log
+    if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+    fi
   fi
 fi
 
@@ -517,9 +424,13 @@ if [ $step -eq 03 -a $start_step -le 03 -a $end_step -ge 03 ];then
     if [ $p03_fillhole == "y" ];then p03_op="$p03_op --fillhole"; fi
     if [ ! -z $p03_n_para ];then p03_op="$p03_op --n_para $p03_n_para";
     elif [ ! -z $n_para ];then p03_op="$p03_op --n_para $n_para";fi
-    STEP2_11_CMDS+="LiCSBAS03op_GACOS.py $p03_op 2>&1 | tee -a \$log"$'\n'
-    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
-    STEP2_11_CMDS+="$pipefall"
+
+    if [ $check_only == "y" ];then
+      echo "LiCSBAS03op_GACOS.py $p03_op"
+    else
+      LiCSBAS03op_GACOS.py $p03_op 2>&1 | tee -a $log
+      if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+    fi
     ### Update GEOCmldir to be used for following steps
     GEOCmldir="$outGEOCmldir"
   fi
@@ -541,9 +452,12 @@ if [ $step -eq 04 -a $start_step -le 04 -a $end_step -ge 04 ];then
     if [ ! -z $p04_n_para ];then p04_op="$p04_op --n_para $p04_n_para";
     elif [ ! -z $n_para ];then p04_op="$p04_op --n_para $n_para";fi
 
-    STEP2_11_CMDS+="LiCSBAS04op_mask_unw.py $p04_op 2>&1 | tee -a \$log"$'\n'
-    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
-    STEP2_11_CMDS+="$pipefall"
+    if [ $check_only == "y" ];then
+      echo "LiCSBAS04op_mask_unw.py $p04_op"
+    else
+      LiCSBAS04op_mask_unw.py $p04_op 2>&1 | tee -a $log
+      if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+    fi
     ### Update GEOCmldir to be used for following steps
     GEOCmldir="$outGEOCmldir"
   fi
@@ -562,9 +476,13 @@ if [ $step -eq 05 -a $start_step -le 05 -a $end_step -ge 05 ];then
     if [ ! -z $p05_clip_range_geo ];then p05_op="$p05_op -g $p05_clip_range_geo"; fi
     if [ ! -z $p05_n_para ];then p05_op="$p05_op --n_para $p05_n_para";
     elif [ ! -z $n_para ];then p05_op="$p05_op --n_para $n_para";fi
-    STEP2_11_CMDS+="LiCSBAS05op_clip_unw.py $p05_op 2>&1 | tee -a \$log"$'\n'
-    #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
-    STEP2_11_CMDS+="$pipefall"
+
+    if [ $check_only == "y" ];then
+      echo "LiCSBAS05op_clip_unw.py $p05_op"
+    else
+      LiCSBAS05op_clip_unw.py $p05_op 2>&1 | tee -a $log
+      if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+    fi
     ### Update GEOCmldir to be used for following steps
     GEOCmldir="$outGEOCmldir"
   fi
@@ -574,6 +492,7 @@ done ##1
 
 ### Determine name of TSdir
 TSdir="TS_$GEOCmldir"
+
 
 if [ $start_step -le 11 -a $end_step -ge 11 ];then
   p11_op=""
@@ -586,13 +505,14 @@ if [ $start_step -le 11 -a $end_step -ge 11 ];then
   if [ ! -z $p11_maxbtemp ];then p11_op="$p11_op --minbtemp $p11_maxbtemp"; fi
   if [ $p11_sbovl == "y" ];then p11_op="$p11_op --sbovl"; fi
   if [ $p11_s_param == "y" ];then p11_op="$p11_op -s"; fi
-  STEP2_11_CMDS+="LiCSBAS11_check_unw.py $p11_op 2>&1 | tee -a \$log"$'\n'
-  #STEP2_11_CMDS=$(add_pipefall "$STEP2_11_CMDS")
-  STEP2_11_CMDS+="$pipefall"
+  if [ $check_only == "y" ];then
+    echo "LiCSBAS11_check_unw.py $p11_op"
+  else
+    LiCSBAS11_check_unw.py $p11_op 2>&1 | tee -a $log
+    if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+  fi
 fi
 
-# STEP 12: Loop closure
-STEP12_CMDS="echo 'Running Step 12: Loop closure...'"$'\n'
 if [ $start_step -le 12 -a $end_step -ge 12 ];then
   if [ "$cometdev" -eq 1 ] || [ "$p120_sbovl" == "y" ]; then
     p120_use='y'
@@ -606,8 +526,12 @@ if [ $start_step -le 12 -a $end_step -ge 12 ];then
     if [ $p120_sbovl == "y" ]; then
       extra="--sbovl"
     fi
-    STEP12_CMDS+="LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a \$log"$'\n'
-    STEP12_CMDS+="if [ \${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #exit 1; fi # this often fails, so only warning message"$'\n'
+    if [ $check_only == "y" ];then
+      echo "LiCSBAS120_choose_reference.py $dirset "$extra
+    else
+      LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a $log
+      if [ ${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #exit 1; fi # this often fails, so only warning message
+    fi
   fi
 
   if [ $p120_sbovl != "y" ]; then
@@ -626,7 +550,13 @@ if [ $start_step -le 12 -a $end_step -ge 12 ];then
       if [ ! -z $p12_rm_ifg_list ];then p12_op="$p12_op --rm_ifg_list $p12_rm_ifg_list"; fi
       if [ ! -z $p12_n_para ];then p12_op="$p12_op --n_para $p12_n_para";
       elif [ ! -z $n_para ];then p12_op="$p12_op --n_para $n_para";fi
-      STEP12_CMDS+="LiCSBAS12_loop_closure.py $p12_op 2>&1 | tee -a \$log"$'\n'
+    
+      if [ $check_only == "y" ];then
+        echo "LiCSBAS12_loop_closure.py $p12_op "
+      else
+        LiCSBAS12_loop_closure.py $p12_op 2>&1 | tee -a $log
+        if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+      fi
       # 2024/11/13: updated nullification may cause extra all-nans-in-ref area. Rerunning step 120 if set to be used
       if [ $p12_nullify == "y" ];then
       if [ $p120_use == "y" ]; then
@@ -635,33 +565,30 @@ if [ $start_step -le 12 -a $end_step -ge 12 ];then
         if [ $p120_ignoreconncomp == "y" ]; then
             extra="--ignore_comp"
         fi
-        STEP12_CMDS+="LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a \$log"$'\n'
-        STEP12_CMDS+="if [ \${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #"$'\n'
-
+        if [ $check_only == "y" ];then
+          echo "LiCSBAS120_choose_reference.py $dirset "$extra
+        else
+          LiCSBAS120_choose_reference.py $dirset $extra 2>&1 | tee -a $log
+          if [ ${PIPESTATUS[0]} -ne 0 ];then echo "WARNING, LiCSBAS120 failed. Reverting to original LiCSBAS ref selection"; fi; #
+          # if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+        fi
       fi
       fi
     fi
 fi
 
-# STEP 13: Small baseline inversion
-STEP13_CMDS="echo 'Running Step 13: Small baseline inversion...'"$'\n'
 if [ $start_step -le 13 -a $end_step -ge 13 ];then
-  #Adding step 13 log
-  if [ $p13_num_attempt -gt 1  ]; then
-    if [ $p13_TSdir -z ]; then p13_TSdir="$TSdir"; fi
-    info_dir="$p13_TSdir/info"
-    attempt_log="$info_dir/13_attempt_log.txt"
-    STEP13_CMDS+="echo 'Opening 13_attempt_log.txt' && last_line=\$(tail -n 1 \"$attempt_log\") && IFS='@' read -r Event Time <<< \"\$last_line\""$'\n'
-    STEP13_CMDS+="if [ \"\$Event\" == 'Finished ' ]; then echo \"Decided Complete @ \$(date)\" >> \"$attempt_log\"; else echo \"Decided Incomplete @ \$(date)\" >> \"$attempt_log\""$'\n'
-  fi
-
   # getting eq offsets here:
   if [ "$eqoffs" == "y" -a $eqoffs_minmag -gt 0 ]; then
     extra='-M '$eqoffs_minmag
     extra=$extra' -t '$TSdir
     extra=$extra' -o '$eqoffs_txtfile
     extra=$extra' --buffer '$eqoffs_buffer
-    STEP13_CMDS+="LiCSBAS_get_eqoffsets.py $extra 2>&1 | tee -a \$log"$'\n'
+    if [ "$check_only" == "y" ];then
+      echo "LiCSBAS_get_eqoffsets.py $extra"
+    else
+      LiCSBAS_get_eqoffsets.py $extra
+    fi
   fi
   p13_op=""
   if [ ! -z "$p13_GEOCmldir" ];then p13_op="$p13_op -d $p13_GEOCmldir";
@@ -682,7 +609,7 @@ if [ $start_step -le 13 -a $end_step -ge 13 ];then
   if [ "$p13_singular_gauss" == "y" ];then p13_op="$p13_op --singular_gauss"; fi
   if [ "$p13_skippngs" == "y" ];then p13_op="$p13_op --nopngs"; fi
   if [ "$gpu" == "y" ];then p13_op="$p13_op --gpu"; fi
-  if [[ "$p13_num_attempt" -gt 1 || "$p13_load_patches" == "y" ]];then p13_op="$p13_op --load_patches"; fi
+
   if [ "$cometdev" -eq 1 ];then
       extra='--nopngs'
       if [ -z "$p13_n_unw_r_thre" ];then extra="$extra --n_unw_r_thre 0.4"; fi
@@ -696,25 +623,25 @@ if [ $start_step -le 13 -a $end_step -ge 13 ];then
     extra='--offsets '$eqoffs_txtfile
   fi
 
-    STEP13_CMDS+="LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a \$log"$'\n'
-    STEP13_CMDS+="pstat=(\${PIPESTATUS[0]})"$'\n'
+
+  if [ "$check_only" == "y" ];then
+    echo "LiCSBAS13_sb_inv.py $extra $p13_op"
+  else
+    LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a $log
+    pstat=(${PIPESTATUS[0]})
 
     if [ "$p12_nullify" == "y" ];then
-      STEP13_CMDS+="if [ \$pstat -ne 0 ];then"$'\n'
-      STEP13_CMDS+="  echo 'Fixing the unresolved-yet issue with NaNs in ref area by just rerunning step 13'"$'\n'
-      STEP13_CMDS+="  LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a \$log"$'\n'
-      STEP13_CMDS+="pstat=(\${PIPESTATUS[0]})"$'\n'
-      STEP13_CMDS+="fi"$'\n'
+      if [ $pstat -ne 0 ];then
+        echo "Fixing the unresolved-yet issue with NaNs in ref area by just rerunning step 13"
+        LiCSBAS13_sb_inv.py $extra $p13_op 2>&1 | tee -a $log
+        pstat=(${PIPESTATUS[0]})
+      fi
     fi
 
-    STEP13_CMDS+="if [ \$pstat -ne 0 ];then exit 1; fi"$'\n'
-  if [ $p13_num_attempt -gt 1  ]; then
-    STEP13_CMDS+="fi && echo \"Finished @ \$(date)\" >> $attempt_log"
+    if [ $pstat -ne 0 ];then exit 1; fi
   fi
 fi
 
-# STEPS 14-16: Velocity, masking, filtering
-STEP14_16_CMDS="echo 'Running Steps 14-16...'"$'\n'
 if [ $start_step -le 14 -a $end_step -ge 14 ];then
   p14_op=""
   if [ ! -z $p14_TSdir ];then p14_op="$p14_op -t $p14_TSdir";
@@ -727,10 +654,14 @@ if [ $start_step -le 14 -a $end_step -ge 14 ];then
   else
     extra=''
   fi
-  STEP14_16_CMDS+="LiCSBAS14_vel_std.py $extra $p14_op 2>&1 | tee -a \$log"$'\n'
-  #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
-  STEP14_16_CMDS+="$pipefall"
+  if [ $check_only == "y" ];then
+    echo "LiCSBAS14_vel_std.py $extra $p14_op"
+  else
+    LiCSBAS14_vel_std.py $extra $p14_op 2>&1 | tee -a $log
+    if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+  fi
 fi
+
 if [ $start_step -le 15 -a $end_step -ge 15 ];then
   p15_op=""
   if [ ! -z "$p15_TSdir" ];then p15_op="$p15_op -t $p15_TSdir";
@@ -752,10 +683,15 @@ if [ $start_step -le 15 -a $end_step -ge 15 ];then
   if [ "$p15_noautoadjust" == "y" ];then p15_op="$p15_op --noautoadjust"; fi
   if [ "$p15_sbovl" == "y" ];then p15_op="$p15_op --sbovl"; fi
   if [ "$p15_n_gap_use_merged" == "y" ];then p15_op="$p15_op --n_gap_use_merged"; fi
-  STEP14_16_CMDS+="LiCSBAS15_mask_ts.py $p15_op 2>&1 | tee -a \$log"$'\n'
-  #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
-  STEP14_16_CMDS+="$pipefall"
+
+  if [ "$check_only" == "y" ];then
+    echo "LiCSBAS15_mask_ts.py $p15_op"
+  else
+    LiCSBAS15_mask_ts.py $p15_op 2>&1 | tee -a $log
+    if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
+  fi
 fi
+
 if [ $start_step -le 16 -a $end_step -ge 16 ];then
   p16_op=""
   if [ ! -z "$p16_TSdir" ];then p16_op="$p16_op -t $p16_TSdir";
@@ -783,120 +719,17 @@ if [ $start_step -le 16 -a $end_step -ge 16 ];then
   else
     extra=''
   fi
-  STEP14_16_CMDS+="LiCSBAS16_filt_ts.py $extra $p16_op 2>&1 | tee -a \$log"$'\n'
-  #STEP14_16=$(add_pipefall "$STEP14_16_CMDS")
-  STEP14_16_CMDS+="$pipefall"
-fi
-################################
-### Create and Submit Jobs ###
-################################
 
-letter_from_num() {
-  local letter=$(printf "\\$(printf '%03o' $((96 + $1)))")
-  echo "$letter"
-}
-
-echo "========================================="
-echo "Creating and Submitting Job Scripts"
-echo "========================================="
-echo ""
-
-scancel_CMD="#!/bin/bash"$'\n'
-scancel_CMD+="scancel"
-squeue_CMD="#!/bin/bash"$'\n'
-squeue_CMD+="squeue --job "
-
-# Step 01
-if [ $start_step -le 01 -a $end_step -ge 01 ];then
-  JOB_ID_01=$(create_and_submit_job "01" "Jasmin_LB_01.sh" "Jasmin_LB_01_${FRAME_NAME}" "$JASMIN_TIME_STEP1" "$JASMIN_MEM_STEP1" "$JASMIN_CPUS_STEP1" "" "$STEP1_CMDS")
-  scancel_CMD+=" $JOB_ID_01"
-  squeue_CMD+="$JOB_ID_01,"
-fi
-
-# Steps 02-11
-if [ $start_step -le 11 -a $end_step -ge 02 ];then
-  JOB_ID_02_11=$(create_and_submit_job "02-11" "Jasmin_LB_02_11.sh" "Jasmin_LB_02_11_${FRAME_NAME}" "$JASMIN_TIME_STEP2_11" "$JASMIN_MEM_STEP2_11" "$JASMIN_CPUS_STEP2_11" "$JOB_ID_01" "$STEP2_11_CMDS")
-  scancel_CMD+=" $JOB_ID_02_11"
-  squeue_CMD+="$JOB_ID_02_11,"
-fi
-
-# Step 12
-if [ $start_step -le 12 -a $end_step -ge 12 ];then
-  JOB_ID_12=$(create_and_submit_job "12" "Jasmin_LB_12.sh" "Jasmin_LB_12_${FRAME_NAME}" "$JASMIN_TIME_STEP12" "$JASMIN_MEM_STEP12" "$JASMIN_CPUS_STEP12" "$JOB_ID_02_11" "$STEP12_CMDS")
-  scancel_CMD+=" $JOB_ID_12"
-  squeue_CMD+="$JOB_ID_12,"
-fi
-
-# Step 13
-if [ $start_step -le 13 -a $end_step -ge 13 ];then
-  prev_JOB_ID="$JOB_ID_12"
-  JOB_ID_13_arr=()
-  for attempt in $(seq 1 "$p13_num_attempt"); do
-    attempt_letter=$(letter_from_num "$attempt")
-    echo "Attempt $attempt, letter $attempt_letter"
-    prev_JOB_ID=$(create_and_submit_job "13" "Jasmin_LB_13.sh" "Jasmin_LB_13${attempt_letter}_${FRAME_NAME}" "$JASMIN_TIME_STEP13" "$JASMIN_MEM_STEP13" "$JASMIN_CPUS_STEP13" "$prev_JOB_ID" "$STEP13_CMDS")
-    JOB_ID_13_arr+=("$prev_JOB_ID")
-    scancel_CMD+=" $prev_JOB_ID"
-    squeue_CMD+="$prev_JOB_ID,"
-  done
-  JOB_ID_13="$prev_JOB_ID"
-
-  if [ $p13_num_attempt -gt 1  ]; then
-    mkdir -p "$info_dir"
-    > "$info_dir/13_attempt_log.txt"
+  if [ "$check_only" == "y" ];then
+    echo "LiCSBAS16_filt_ts.py $extra $p16_op"
+  else
+    LiCSBAS16_filt_ts.py $extra $p16_op 2>&1 | tee -a $log
+    if [ ${PIPESTATUS[0]} -ne 0 ];then exit 1; fi
   fi
 fi
 
-# Steps 14-16
-if [ $start_step -le 16 -a $end_step -ge 14 ];then
-  JOB_ID_14_16=$(create_and_submit_job "14-16" "Jasmin_LB_14_16.sh" "Jasmin_LB_14_16_${FRAME_NAME}" "$JASMIN_TIME_STEP14_16" "$JASMIN_MEM_STEP14_16" "$JASMIN_CPUS_STEP14_16" "$JOB_ID_13" "$STEP14_16_CMDS")
-  scancel_CMD+=" $JOB_ID_14_16"
-  squeue_CMD+="$JOB_ID_14_16,"
+if [ $check_only == "y" ];then
+  echo ""
+  echo "Above commands will run when you change check_only to \"n\""
+  echo ""
 fi
-
-################################
-### Summary ###
-################################
-echo ""
-echo "========================================="
-echo "Job Submission Summary"
-echo "========================================="
-echo "Frame: $FRAME_NAME"
-echo "Step 01 Job ID:     $JOB_ID_01"
-echo "Steps 02-11 Job ID: $JOB_ID_02_11"
-echo "Step 12 Job ID:    $JOB_ID_12"
-for attempt in $(seq 1 "$p13_num_attempt"); do
-  attempt_letter=$(letter_from_num "$attempt")
-  echo "Step 13$attempt_letter Job ID:    ${JOB_ID_13_arr[$attempt - 1]}"
-done
-echo "Steps 14-16 Job ID: $JOB_ID_14_16"
-echo ""
-
-if [ "$SUBMIT_JOBS" == "y" ]; then
-  scancel_file="cancel_current_run.sh"
-  squeue_file="view_current_run.sh"
-  > "$scancel_file"
-  > "$squeue_file"
-  echo scancel_CMD >> "$scancel_file"
-  echo squeue_CMD >> "$squeue_file"
-  chmod +x "$scancel_file"
-  chmod +x "$squeue_file"
-  echo "Jobs submitted to Jasmin!"
-  echo ""
-  echo "To check status of all jobs from current run:"
-  echo "  ./$squeue_file"
-  echo ""
-  echo "To cancel all jobs from current run:"
-  echo "  ./$scancel_file"
-  echo ""
-else
-  echo "Job scripts created but not submitted (SUBMIT_JOBS='n')."
-  echo "To submit manually, run:"
-  echo "  sbatch Jasmin_LB_01.sh"
-  echo "  sbatch --dependency=afterok:\$JOB_ID_01 Jasmin_LB_02_11.sh"
-  echo "  ... and so on"
-fi
-
-echo ""
-echo "Log file: $log"
-echo ""
